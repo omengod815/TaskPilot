@@ -1,0 +1,55 @@
+services:
+  api:
+    build:
+      context: .
+      args:
+        INSTALL_OPTIONAL: "0"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    env_file:
+      - .env
+    environment:
+      TASKPILOT_DB_PATH: /app/data/taskpilot.sqlite3
+      # Checkpoints must survive container restarts: keep them on the volume.
+      TASKPILOT_CHECKPOINT_PATH: /app/data/checkpoints.sqlite3
+      TASKPILOT_UPLOAD_DIR: /app/data/uploads
+      TASKPILOT_OUTPUT_DIR: /app/outputs
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./outputs:/app/outputs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      - redis
+
+  # Legacy Gradio UI. It needs the optional dependencies, so it is opt-in:
+  #   docker compose --profile ui up --build
+  ui:
+    profiles: ["ui"]
+    build:
+      context: .
+      args:
+        INSTALL_OPTIONAL: "1"
+    command: python ui/gradio_app.py
+    environment:
+      API_BASE: http://api:8000
+      TASKPILOT_API_TOKEN: ${TASKPILOT_API_TOKEN:-}
+    ports:
+      - "7860:7860"
+    depends_on:
+      - api
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+
+volumes:
+  redis_data:

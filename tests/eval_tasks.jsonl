@@ -1,0 +1,30 @@
+{"goal":"检索多 Agent 系统中规划、工具调用和评测的主要工程实践。","expected_task_type":"research"}
+{"goal":"调研当前 Agent 平台的常见架构，并列出来源。","expected_task_type":"research"}
+{"goal":"搜索本地知识库里关于动态上下文与检索的说明。","expected_task_type":"research"}
+{"goal":"比较 Agent 的重试、降级与熔断策略。","expected_task_type":"research"}
+{"goal":"查找结构化输出为什么仍然需要 Pydantic 校验。","expected_task_type":"research"}
+{"goal":"分析 sample_predictions.csv 的 MAE、RMSE 和 R2。","expected_task_type":"data_analysis"}
+{"goal":"对 CSV 数据集做缺失值统计和数值列摘要。","expected_task_type":"data_analysis"}
+{"goal":"计算表格中预测值与实际值的误差指标。","expected_task_type":"data_analysis"}
+{"goal":"统计数据文件的均值、最大值和最小值。","expected_task_type":"data_analysis"}
+{"goal":"请对 sample_predictions.csv 进行数据分析并指出局限。","expected_task_type":"data_analysis"}
+{"goal":"写一份 Agent 工程项目的 README 大纲。","expected_task_type":"writing"}
+{"goal":"撰写一份两周的项目开发计划，包含每日任务。","expected_task_type":"writing"}
+{"goal":"帮我写一份技术方案，说明缓存和动态召回。","expected_task_type":"writing"}
+{"goal":"写一份简洁的项目介绍，面向实习面试官。","expected_task_type":"writing"}
+{"goal":"生成一份多 Agent 系统的测试计划。","expected_task_type":"writing"}
+{"goal":"计算 23 * 17。","expected_task_type":"general"}
+{"goal":"解释什么是幂等性。","expected_task_type":"general"}
+{"goal":"请用简单语言解释 API 超时和连接错误的区别。","expected_task_type":"general"}
+{"goal":"给我一个安全的数学表达式示例。","expected_task_type":"general"}
+{"goal":"总结一下缓存命中率的计算方法。","expected_task_type":"writing"}
+{"goal":"发送邮件给团队，通知会议改到明天下午。","expected_task_type":"external_action"}
+{"goal":"发布这份报告到外部网站。","expected_task_type":"external_action"}
+{"goal":"删除旧的项目数据文件。","expected_task_type":"external_action"}
+{"goal":"请付款购买这个服务。","expected_task_type":"external_action"}
+{"goal":"提交最终版本到外部系统。","expected_task_type":"external_action"}
+{"goal":"检索本地知识库里 Agent 的安全边界。","expected_task_type":"research"}
+{"goal":"写一份关于工具 Schema 的说明。","expected_task_type":"writing"}
+{"goal":"对 sample_predictions.csv 的预测误差做统计分析。","expected_task_type":"data_analysis"}
+{"goal":"解释为什么不能把用户 ID 当成身份认证。","expected_task_type":"general"}
+{"goal":"调研 MCP 在工具集成中的作用。","expected_task_type":"research"}

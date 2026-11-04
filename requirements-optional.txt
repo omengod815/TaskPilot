@@ -1,0 +1,5 @@
+# Optional extras. The industrial upgrade's tests and API do not need them.
+#   pip install -r requirements-optional.txt
+gradio>=5.0,<7.0      # legacy demo UI
+mcp>=1.0,<2.0         # MCP tool server (scripts/mcp_server.py)
+redis>=5.0,<7.0       # shared response cache (single-host SQLite is the default)

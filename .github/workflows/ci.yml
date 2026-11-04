@@ -1,0 +1,38 @@
+name: taskpilot-tests
+on:
+  push:
+  pull_request:
+jobs:
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Run tests
+        env:
+          MOCK_LLM: "1"
+          TASKPILOT_DB_PATH: data/ci_taskpilot.sqlite3
+          TASKPILOT_CHECKPOINT_PATH: data/ci_checkpoints.sqlite3
+          TASKPILOT_OUTPUT_DIR: outputs
+          TASKPILOT_FAULT_INJECTION: "0"
+          TASKPILOT_LOG_LEVEL: WARNING
+        run: python -m pytest -p no:cacheprovider --junitxml=outputs/test-results.xml -q
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}
+          path: outputs/test-results.xml
