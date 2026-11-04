@@ -1,4 +1,4 @@
-# 自由对话式多 Agent 调度（v3.2）
+﻿# 自由对话式多 Agent 调度（v3.2）
 
 > 目标：把“单图多角色编排”变成“Supervisor + 独立 Worker + 共享对话”的自由调度。
 > 代码：`app/agents/conversation/`、`app/services/conversation_store.py`、`app/schemas/conversations.py`
@@ -220,7 +220,7 @@ curl.exe "http://127.0.0.1:8000/conversations?user_id=u1"
 
 ```powershell
 python -m pytest -o addopts="" -q
-# 75 passed（2026-11-04）
+# 76 passed（2026-11-04）
 ```
 
 新增覆盖：
@@ -229,7 +229,7 @@ python -m pytest -o addopts="" -q
 - `test_research_then_writer_hands_off`：research → writing；
 - `test_max_turns_stops_conversation`：max_turns 截断为 partial；
 - `test_worker_rejects_tool_outside_its_profile`：工具越权拒绝；
-- `test_conversation_api_create_get_list`：API 创建/读取/列表/跨用户 404。
+- `test_conversation_api_create_get_list`：API 创建/读取/列表/跨用户 404；\n- `test_runtime_follows_supervisor_choice_not_fixed_order`：脚本化 Supervisor 强制 research→data→finish，证明运行时没有固定边。
 
 ---
 

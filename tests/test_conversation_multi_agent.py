@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 
 from app.agents.conversation.agents import PROFILES, WorkerAgent
-from app.agents.conversation.models import AgentAction, ConversationState
+from app.agents.conversation.models import AgentAction, ConversationState, SupervisorDecision
 from app.agents.conversation.runtime import ConversationRuntime
 from app.core.budget import ExecutionBudget
 from app.main import create_app
@@ -63,6 +63,43 @@ def test_max_turns_stops_conversation(components, settings):
     assert result.stop_reason == "max_turns_exceeded"
     agents = [m["agent"] for m in result.messages if m.get("role") == "agent"]
     assert agents == ["data"]
+
+
+class _ScriptedSupervisor:
+    """Proves the runtime has no fixed research→data edge."""
+
+    def __init__(self) -> None:
+        self._decisions = iter(
+            [
+                SupervisorDecision(next_agent="research", instruction="先检索资料", reason="scripted research"),
+                SupervisorDecision(next_agent="data", instruction="再做 CSV 分析", reason="scripted data"),
+                SupervisorDecision(next_agent="finish", reason="scripted finish"),
+            ]
+        )
+
+    def decide(self, state):
+        try:
+            return next(self._decisions)
+        except StopIteration:
+            return SupervisorDecision(next_agent="finish", reason="script exhausted")
+
+
+def test_runtime_follows_supervisor_choice_not_fixed_order(components, settings):
+    store = ConversationStore(settings.taskpilot_db_path)
+    runtime = ConversationRuntime(
+        settings,
+        components.llm,
+        components.registry,
+        store,
+        supervisor=_ScriptedSupervisor(),
+    )
+    result = runtime.run(make_state(settings, "调研并分析 sample_predictions.csv", max_turns=4))
+
+    assert result.status == "completed"
+    agents = [m["agent"] for m in result.messages if m.get("role") == "agent"]
+    assert agents == ["research", "data", "writing"]
+    assert [h["to"] for h in result.handoffs] == ["research", "data", "finish"]
+    assert {o.get("tool") for o in result.observations} >= {"search_web", "analyze_csv"}
 
 
 class _FakeCall:

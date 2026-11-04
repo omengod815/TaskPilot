@@ -149,11 +149,11 @@ curl.exe -X POST http://127.0.0.1:8000/conversations `
 
 ```powershell
 python -m pytest -o addopts="" -q
-# 75 passed in 21.29s（2026-11-04，Windows + Python 3.12.14；多次运行 19–25s）
+# 76 passed in 22.64s（2026-11-04，Windows + Python 3.12.14；多次运行 19–25s）
 ```
 
 证据：`outputs/test-results-v3.xml`。  
-覆盖：原 64 个测试 + 6 个 P0 回归 + 5 个多 Agent 对话测试。
+覆盖：原 64 个测试 + 6 个 P0 回归 + 6 个多 Agent 对话测试。
 
 ### 5.2 真实 Qwen smoke
 
@@ -198,7 +198,7 @@ taskpilot-platform-v3/
 │  ├─ core/                    # 预算、重试、熔断、错误、指标、日志
 │  ├─ services/                # 任务库、幂等、检查点、记忆、LLM、对话存储
 │  └─ tools/                   # ToolRegistry、安全工具
-├─ tests/                      # 75 个测试（含 6 个 P0 回归 + 5 个多 Agent 对话）
+├─ tests/                      # 76 个测试（含 6 个 P0 回归 + 6 个多 Agent 对话）
 ├─ scripts/
 │  ├─ test_llm.py              # 真实模型结构化 smoke
 │  ├─ real_e2e_smoke.py        # 真实模型单图端到端 smoke
@@ -260,6 +260,7 @@ python scripts/real_e2e_smoke.py
 python scripts/conversation_smoke.py
 uvicorn app.main:app --reload
 ```
+
 
 
 

@@ -13,7 +13,7 @@
 | 项 | 结果 |
 |---|---|
 | 项目目录 | `taskpilot-platform-v3/` |
-| 自动化测试 | **75 passed，0 failed，21.29s**（2026-11-04；多次运行 19–25s） |
+| 自动化测试 | **76 passed，0 failed，22.64s**（2026-11-04；多次运行 19–25s） |
 | 真实模型结构化 smoke | **成功**：返回合法 `TaskPlan`，熔断器 CLOSED |
 | 真实模型端到端 smoke | **成功**：`status=completed`，调用 `analyze_csv`，4 次模型调用 |
 | 真实任务指标 | MAE=1.35、RMSE=1.4089、R2=0.984876（来自工具结果） |
@@ -38,7 +38,7 @@
 | `app/agents/conversation/` | 新增 Supervisor + 4 个独立 Worker + 共享 transcript 运行时 |
 | `app/services/conversation_store.py` | 新增对话持久化（conversations 表） |
 | `app/schemas/conversations.py` | 新增 /conversations 请求/响应 Schema |
-| `tests/test_conversation_multi_agent.py` | 新增 5 个多 Agent 对话测试 |
+| `tests/test_conversation_multi_agent.py` | 新增 6 个多 Agent 对话测试 |
 | `scripts/conversation_smoke.py` | 新增真实模型多 Agent 对话 smoke |
 | `README.md` | 改写为 v3.2 使用说明与边界 |
 
@@ -73,12 +73,12 @@ python -m pytest -o addopts="" -q --junitxml=outputs/test-results-v3.xml
 ### 3.2 结果
 
 ```text
-75 passed in 21.29s
+76 passed in 22.64s
 ```
 
 - 原 64 个测试全部保留并通过；
 - 新增 6 个回归测试：跨用户 key、列表隔离、并发 resume、completed 拒绝 resume、mark_succeeded 失败、旧表迁移；
-- 新增 5 个多 Agent 对话测试：data→writing、research→writing、max_turns 截断、工具越权拒绝、API 创建/读取/列表；
+- 新增 6 个多 Agent 对话测试：data→writing、research→writing、脚本化 research→data（证明无固定边）、max_turns 截断、工具越权拒绝、API 创建/读取/列表；
 - 测试仍为离线 `MOCK_LLM=1`，不调用真实 API。
 
 证据文件：`outputs/test-results-v3.xml`。
@@ -248,6 +248,8 @@ uvicorn app.main:app --reload
 - 审查报告：`docs/v3/01_技术审查报告.md`
 - P0/P1/P2：`docs/v3/03_问题清单_P0P1P2.md`
 - 本项目的使用说明：`README.md`
+
+
 
 
 
