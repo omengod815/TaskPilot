@@ -1,4 +1,4 @@
-﻿# TaskPilot v3.1 构建报告
+﻿# TaskPilot v3.2 构建报告
 
 > 构建日期：2026-11-04
 > 目标：根据《TaskPilot Agent Platform — Agent 工业级升级实战教程》构建一个可运行项目
@@ -13,14 +13,15 @@
 | 项 | 结果 |
 |---|---|
 | 项目目录 | `taskpilot-platform-v3/` |
-| 自动化测试 | **70 passed，0 failed，19.12s**（2026-11-04；多次运行 19–22s） |
+| 自动化测试 | **75 passed，0 failed，21.29s**（2026-11-04；多次运行 19–25s） |
 | 真实模型结构化 smoke | **成功**：返回合法 `TaskPlan`，熔断器 CLOSED |
 | 真实模型端到端 smoke | **成功**：`status=completed`，调用 `analyze_csv`，4 次模型调用 |
 | 真实任务指标 | MAE=1.35、RMSE=1.4089、R2=0.984876（来自工具结果） |
 | 真实 smoke Token | 7403（多次运行 7.0k–8.1k 波动） |
 | 真实 smoke 耗时 | 约 46s（多次运行 38–53s 波动） |
+| 真实多 Agent 对话 smoke | **成功**：`data → writing → finish`，6 次模型调用，8605 tokens，约 34s |
 | `.env` | 已按当前 Qwen 配置生成；被 `.gitignore` 忽略，**不进入交付压缩包** |
-| 业务源码是否重写 | 否；在 v2 基线上应用 4 个 P0 修复 + 2 个工程修复 |
+| 业务源码是否重写 | 否；v2 基线 + 4 个 P0 修复 + 2 个工程修复 + v3.2 多 Agent 运行时 |
 
 ### 新增/修改的关键文件
 
@@ -34,7 +35,12 @@
 | `scripts/test_llm.py` | 修复直接运行时的 `ModuleNotFoundError`（加入 project root） |
 | `scripts/real_e2e_smoke.py` | 新增真实模型端到端 smoke（fresh user/session，强制工具调用） |
 | `tests/test_v3_p0_fixes.py` | 新增 6 个 P0/迁移回归测试 |
-| `README.md` | 改写为 v3.1 使用说明与边界 |
+| `app/agents/conversation/` | 新增 Supervisor + 4 个独立 Worker + 共享 transcript 运行时 |
+| `app/services/conversation_store.py` | 新增对话持久化（conversations 表） |
+| `app/schemas/conversations.py` | 新增 /conversations 请求/响应 Schema |
+| `tests/test_conversation_multi_agent.py` | 新增 5 个多 Agent 对话测试 |
+| `scripts/conversation_smoke.py` | 新增真实模型多 Agent 对话 smoke |
+| `README.md` | 改写为 v3.2 使用说明与边界 |
 
 ---
 
@@ -67,11 +73,12 @@ python -m pytest -o addopts="" -q --junitxml=outputs/test-results-v3.xml
 ### 3.2 结果
 
 ```text
-70 passed in 19.12s
+75 passed in 21.29s
 ```
 
 - 原 64 个测试全部保留并通过；
 - 新增 6 个回归测试：跨用户 key、列表隔离、并发 resume、completed 拒绝 resume、mark_succeeded 失败、旧表迁移；
+- 新增 5 个多 Agent 对话测试：data→writing、research→writing、max_turns 截断、工具越权拒绝、API 创建/读取/列表；
 - 测试仍为离线 `MOCK_LLM=1`，不调用真实 API。
 
 证据文件：`outputs/test-results-v3.xml`。
@@ -145,16 +152,39 @@ classify → context_retrieval → planner → react_decide → writer → revie
 
 这个发现也说明：Memory 不是“越多越好”，评测设计必须隔离历史。
 
+### 4.5 多 Agent 对话 smoke（v3.2）
+
+```powershell
+$env:MOCK_LLM="0"
+python scripts/conversation_smoke.py
+```
+
+实际结果：
+
+```text
+HTTP 200
+status=completed
+agents=[data, writing]
+handoffs: data → writing → finish
+observations: analyze_csv ok
+turn=2, model_calls=6, tokens=8605, 约 34s
+final_answer: MAE=1.35, RMSE=1.4089, R2=0.984876，并说明样本量仅 8 条
+```
+
+Supervisor 第一次选择 data（缺少数值证据），第二次选择 writing（数值完成，转写成结论），第三次 finish。  
+证据：`outputs/conversation_real_smoke.json`、`outputs/conversation_real_smoke.txt`。
+
 ---
 
 ## 5. 没有做/没有验证的
 
 | 项 | 状态 |
 |---|---|
-| 任务队列 / Worker 租约 / 心跳 / reaper | 未实现（v3.2） |
-| 运行中任务取消 | 未实现（v3.2） |
+| 任务队列 / Worker 租约 / 心跳 / reaper | 未实现（v3.3） |
+| 运行中任务取消 | 未实现（v3.3） |
 | 任务级单写者（多 worker） | 未实现；当前只有工具幂等 |
-| 真实模型质量评测（多任务/rubric/回归） | 未做；只有 2 类 smoke |
+| 对话恢复/取消 | 未实现；`/conversations` 同步执行，未接 checkpoint |
+| 真实模型质量评测（多任务/rubric/回归） | 未做；只有 3 类 smoke |
 | Trace 节点耗时/`model_call_id`/任务级 Token 归因 | 未实现 |
 | 多租户/RBAC | 未实现；`user_id` 仍可伪造 |
 | Docker Compose / MCP / Gradio | 未在本环境验证 |
@@ -179,6 +209,7 @@ Copy-Item .env.example .env
 # 编辑 .env：QWEN_API_KEY=...，MOCK_LLM=0
 python scripts/test_llm.py
 python scripts/real_e2e_smoke.py
+python scripts/conversation_smoke.py
 
 # 启动 API
 uvicorn app.main:app --reload
@@ -203,10 +234,11 @@ uvicorn app.main:app --reload
 1. 让教程里的机制**真的能跑**；
 2. 把审查发现的 4 个 P0 **先修掉**，不把已知缺陷带进新项目；
 3. 用真实 Qwen 跑通 **planner → react → tool → writer**；
-4. 明确哪些还没做（任务租约/取消/真实评测/多租户）。
+4. 新增 **Supervisor + 独立 Worker + 共享 transcript** 的自由对话多 Agent 路径，并跑通 **data → writing → finish**；
+5. 明确哪些还没做（任务租约/取消/真实评测/多租户/对话恢复）。
 
 当前状态：**可运行、可测试、可接真实模型、边界清楚**。  
-下一步优先：任务租约/取消 → 真实模型评测集 → Trace 节点耗时 → Docker 验证。
+下一步优先：对话恢复/取消 → 多 Agent 评测集 → 任务租约/取消 → Trace 节点耗时 → Docker 验证。
 
 ---
 
@@ -216,3 +248,7 @@ uvicorn app.main:app --reload
 - 审查报告：`docs/v3/01_技术审查报告.md`
 - P0/P1/P2：`docs/v3/03_问题清单_P0P1P2.md`
 - 本项目的使用说明：`README.md`
+
+
+
+

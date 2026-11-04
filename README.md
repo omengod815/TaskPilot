@@ -1,4 +1,4 @@
-﻿# TaskPilot Agent Platform v3.1
+﻿# TaskPilot Agent Platform v3.2
 
 > 依据《TaskPilot Agent Platform — Agent 工业级升级实战教程》构建的可运行工程。
 > 代码基线：`taskpilot-industrial` v2.0.0-industrial；本目录在其上应用了 v3 审查中的 P0 修复，并接入真实 Qwen 模型。
@@ -24,7 +24,9 @@
 | **P0：`GET /tasks` 按用户过滤** | **已修复** |
 | **P0：`/resume` 原子领取** | **已修复** |
 | **P0：`mark_succeeded` 失败不再报成功** | **已修复** |
-| 任务队列 / 租约 / 心跳 / 运行中取消 | 未实现（v3.2 计划） |
+| **自由对话式多 Agent（Supervisor + 4 Worker + 共享 transcript）** | **已实现（v3.2）** |
+| **对话持久化、查询、按用户列表** | **已实现** |
+| 任务队列 / 租约 / 心跳 / 运行中取消 | 未实现（v3.3 计划） |
 | 真实模型效果评测 / 多租户 RBAC | 未实现 |
 
 ---
@@ -99,6 +101,32 @@ curl.exe -X POST http://127.0.0.1:8000/tasks/<task_id>/approve -H "Content-Type:
   -d '{"user_id":"u1","approved":true,"reason":"确认发送范围"}'
 ```
 
+### 3.2 自由对话式多 Agent（v3.2 新增）
+
+`/tasks` 是“单图多角色”；`/conversations` 是“Supervisor + 独立 Worker + 共享对话”：
+
+```text
+用户目标 → 共享 transcript → Supervisor 决定下一位
+        → research / data / writing / general → 回写 transcript
+        → Supervisor 再决定 ... → finish → writing 生成最终答复
+```
+
+```powershell
+curl.exe -X POST http://127.0.0.1:8000/conversations `
+  -H "Content-Type: application/json" `
+  -d '{"goal":"分析 sample_predictions.csv 的 MAE、RMSE 和 R2，并写一段结论","user_id":"u1","max_turns":6}'
+```
+
+返回重点：
+
+- `handoffs`：每次“谁在什么理由下接手”；
+- `messages`：user / supervisor / agent 的共享 transcript；
+- `observations`：工具结果；
+- `final_answer`：Writing Agent 综合后的答复；
+- `agents`：当前可调度 Agent 目录（research/data/writing/general）。
+
+设计说明见 `docs/v3/13_多Agent对话运行时.md`；`/tasks` 保留不动，两条路径并存。
+
 ---
 
 ## 4. v3 P0 修复说明
@@ -121,11 +149,11 @@ curl.exe -X POST http://127.0.0.1:8000/tasks/<task_id>/approve -H "Content-Type:
 
 ```powershell
 python -m pytest -o addopts="" -q
-# 70 passed in 19.12s（2026-11-04，Windows + Python 3.12.14；多次运行 19–22s）
+# 75 passed in 21.29s（2026-11-04，Windows + Python 3.12.14；多次运行 19–25s）
 ```
 
 证据：`outputs/test-results-v3.xml`。  
-覆盖：原 64 个测试 + 6 个 P0 回归测试（跨用户 key、列表隔离、并发 resume、mark_succeeded 失败、旧表迁移等）。
+覆盖：原 64 个测试 + 6 个 P0 回归 + 5 个多 Agent 对话测试。
 
 ### 5.2 真实 Qwen smoke
 
@@ -133,6 +161,7 @@ python -m pytest -o addopts="" -q
 $env:MOCK_LLM="0"
 python scripts/test_llm.py          # 结构化 TaskPlan 单调用
 python scripts/real_e2e_smoke.py    # 完整图：planner → react → tool → writer → review
+python scripts/conversation_smoke.py # 自由对话多 Agent：data → writing → finish
 ```
 
 本次实际结果（2026-11-04）：
@@ -146,6 +175,15 @@ python scripts/real_e2e_smoke.py    # 完整图：planner → react → tool →
 
 证据：`outputs/real_llm_smoke.txt`、`outputs/real_e2e_smoke.json`、`outputs/real_e2e_smoke.txt`。
 
+自由对话多 Agent smoke：
+
+- `scripts/conversation_smoke.py`：`status=completed`，`agents=[data, writing]`
+- handoff：`data → writing → finish`
+- 工具：`analyze_csv` 1 次；模型调用 6 次；Token 8605；约 34s
+- 最终答复包含 MAE/RMSE/R2，并主动说明样本量仅 8 条
+
+证据：`outputs/conversation_real_smoke.json`、`outputs/conversation_real_smoke.txt`。
+
 > 这是一次 smoke，不是质量评测；样本量 1，不能据此宣称“准确率 X%”。
 
 ---
@@ -155,15 +193,16 @@ python scripts/real_e2e_smoke.py    # 完整图：planner → react → tool →
 ```text
 taskpilot-platform-v3/
 ├─ app/
-│  ├─ main.py                  # API、认证、限流、审批、恢复
-│  ├─ agents/                  # LangGraph ReAct 图、决策器
+│  ├─ main.py                  # API、认证、限流、审批、恢复、/conversations
+│  ├─ agents/                  # LangGraph ReAct 图 + conversation 多 Agent 运行时
 │  ├─ core/                    # 预算、重试、熔断、错误、指标、日志
-│  ├─ services/                # 任务库、幂等、检查点、记忆、LLM
+│  ├─ services/                # 任务库、幂等、检查点、记忆、LLM、对话存储
 │  └─ tools/                   # ToolRegistry、安全工具
-├─ tests/                      # 70 个测试（含 6 个 P0 回归）
+├─ tests/                      # 75 个测试（含 6 个 P0 回归 + 5 个多 Agent 对话）
 ├─ scripts/
 │  ├─ test_llm.py              # 真实模型结构化 smoke
-│  ├─ real_e2e_smoke.py        # 真实模型端到端 smoke
+│  ├─ real_e2e_smoke.py        # 真实模型单图端到端 smoke
+│  ├─ conversation_smoke.py    # 真实模型多 Agent 对话 smoke
 │  └─ crash_runner.py          # 子进程崩溃恢复
 ├─ docs/                       # 原有架构/审计/测试文档
 ├─ data/                       # SQLite（运行后生成，已 gitignore）
@@ -185,6 +224,9 @@ taskpilot-platform-v3/
 6. **Docker/MCP/Gradio 未在本环境验证**。
 7. **线程式工具超时是“放弃等待”**，不能强杀阻塞线程。
 8. **熔断跨进程共享**有实现，但测试不是双进程。
+9. **多 Agent 对话没有恢复/取消**：`/conversations` 同步执行；进程崩溃后只能重建，未接 checkpoint。
+10. **不是自治 Agent 社会**：Worker 不直接私聊，Supervisor 是单点调度；误路由只有 turn 上限兜底。
+11. **多 Agent 只跑了 1 次真实 smoke**：不能证明“多 Agent 一定优于单 Agent”，需要固定评测集。
 
 ---
 
@@ -193,6 +235,7 @@ taskpilot-platform-v3/
 - `docs/架构说明.md`：组件/时序/故障路径
 - `docs/审计报告.md`：v2 基线 P0–P3
 - `docs/测试报告.md`：原 64 个测试说明
+- `docs/v3/13_多Agent对话运行时.md`：Supervisor/Worker/共享对话设计与边界
 - 上级工作区 `docs/v3/`：v3.0 教程、审查报告、P0/P1/P2、面试题、路线图
 
 ---
@@ -214,7 +257,9 @@ python -m pytest -o addopts="" -q
 $env:MOCK_LLM="0"
 python scripts/test_llm.py
 python scripts/real_e2e_smoke.py
+python scripts/conversation_smoke.py
 uvicorn app.main:app --reload
 ```
+
 
 

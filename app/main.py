@@ -29,6 +29,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.agents.agent_graph import build_agent_graph
+from app.agents.conversation.models import ConversationState
+from app.agents.conversation.runtime import ConversationRuntime
 from app.core.budget import ExecutionBudget
 from app.core.config import Settings, get_settings
 from app.core.context import scope
@@ -38,8 +40,10 @@ from app.core.metrics import METRICS
 from app.core.observability import log_event
 from app.core.ratelimit import SlidingWindowLimiter
 from app.core.timeouts import shutdown_pool
+from app.schemas.conversations import ConversationRequest, ConversationResponse, ConversationSummary
 from app.schemas.tasks import ApprovalRequest, MemoryWriteRequest, TaskRequest, TaskResponse
 from app.services.checkpoint import CheckpointManager, pending_nodes, thread_config
+from app.services.conversation_store import ConversationStore
 from app.services.idempotency import IdempotencyStore
 from app.services.llm_service import AdaptiveLLMService
 from app.services.memory import MemoryStore
@@ -47,7 +51,7 @@ from app.services.repository import TaskRepository
 from app.tools.registry import build_default_registry
 
 logger = logging.getLogger(__name__)
-VERSION = "3.1.0-platform"
+VERSION = "3.2.0-platform"
 
 _PUBLIC_PATHS = {"/health", "/ready", "/docs", "/openapi.json", "/redoc", "/favicon.ico"}
 
@@ -105,6 +109,13 @@ class AppContext:
         self.registry, self.breakers = build_default_registry(settings, self.idempotency)
         self.llm = AdaptiveLLMService(settings=settings)
         self.checkpoints = CheckpointManager(settings.checkpoint_db_path)
+        self.conversation_store = ConversationStore(settings.taskpilot_db_path)
+        self.conversation_runtime = ConversationRuntime(
+            settings,
+            self.llm,
+            self.registry,
+            self.conversation_store,
+        )
         self.graph = build_agent_graph(
             repository=self.repository,
             llm=self.llm,
@@ -286,6 +297,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             budget=state.get("budget") or {},
         )
 
+    def conversation_response(state: dict[str, Any], ctx: AppContext) -> ConversationResponse:
+        return ConversationResponse(
+            conversation_id=state["conversation_id"],
+            status=state.get("status", "running"),
+            goal=state.get("goal", ""),
+            user_id=state.get("user_id", "local-demo"),
+            session_id=state.get("session_id", "default"),
+            max_turns=int(state.get("max_turns", 6)),
+            turn=int(state.get("turn", 0)),
+            messages=state.get("messages") or [],
+            observations=state.get("observations") or [],
+            handoffs=state.get("handoffs") or [],
+            trace=state.get("trace") or [],
+            budget=state.get("budget") or {},
+            final_answer=state.get("final_answer"),
+            stop_reason=state.get("stop_reason"),
+            degraded_reasons=state.get("degraded_reasons") or [],
+            agents=ctx.conversation_runtime.supervisor.catalog(),
+        )
+
     def execute_task(state: dict[str, Any], ctx: AppContext) -> dict[str, Any]:
         config = thread_config(state["task_id"])
         try:
@@ -355,6 +386,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "idempotency": ctx.idempotency.stats(),
             "memory": ctx.memory.stats(),
             "tasks": ctx.repository.count_by_status(),
+            "conversations": ctx.conversation_store.count_by_status(),
         }
 
     @app.post("/files/upload")
@@ -536,6 +568,46 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def list_tasks(limit: int = 30, user_id: str = "local-demo") -> dict[str, Any]:
         ctx = get_ctx()
         return {"items": ctx.repository.list_tasks(limit=max(1, min(limit, 100)), user_id=user_id)}
+
+    # ------------------------------------------------------------------
+    # free-form multi-agent conversations (v3.2)
+    # ------------------------------------------------------------------
+    @app.post("/conversations", response_model=ConversationResponse)
+    def create_conversation(request: ConversationRequest) -> ConversationResponse:
+        ctx = get_ctx()
+        budget = ExecutionBudget.create(cfg.budget_limits())
+        state = ConversationState.create(
+            goal=request.goal,
+            user_id=request.user_id,
+            session_id=request.session_id,
+            max_turns=request.max_turns,
+            budget=budget.to_dict(),
+        )
+        ctx.conversation_store.save(state.to_dict())
+        with scope(task_id=state.conversation_id, thread_id=state.conversation_id):
+            final = ctx.conversation_runtime.run(state)
+        METRICS.inc("conversations_total", status=final.status)
+        return conversation_response(final.to_dict(), ctx)
+
+    @app.get("/conversations/{conversation_id}", response_model=ConversationResponse)
+    def get_conversation(conversation_id: str, user_id: str = "local-demo") -> ConversationResponse:
+        ctx = get_ctx()
+        state = ctx.conversation_store.get(conversation_id)
+        if not state or state.get("user_id") != user_id:
+            raise NotFoundError("对话不存在。")
+        return conversation_response(state, ctx)
+
+    @app.get("/conversations")
+    def list_conversations(limit: int = 30, user_id: str = "local-demo") -> dict[str, Any]:
+        ctx = get_ctx()
+        items = ctx.conversation_store.list_conversations(
+            user_id=user_id,
+            limit=max(1, min(limit, 100)),
+        )
+        return {
+            "items": [ConversationSummary(**item).model_dump(mode="json") for item in items],
+            "agents": ctx.conversation_runtime.supervisor.catalog(),
+        }
 
     @app.post("/memory")
     def write_memory(request: MemoryWriteRequest) -> dict[str, Any]:
