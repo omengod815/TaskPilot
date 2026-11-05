@@ -1,4 +1,4 @@
-﻿# TaskPilot v3.2 构建报告
+﻿# TaskPilot v3.3 构建报告
 
 > 构建日期：2026-11-04
 > 目标：根据《TaskPilot Agent Platform — Agent 工业级升级实战教程》构建一个可运行项目
@@ -13,7 +13,7 @@
 | 项 | 结果 |
 |---|---|
 | 项目目录 | `taskpilot-platform-v3/` |
-| 自动化测试 | **76 passed，0 failed，22.64s**（2026-11-04；多次运行 19–25s） |
+| 自动化测试 | **77 passed，0 failed，21.82s**（2026-11-05；多次运行 19–26s） |
 | 真实模型结构化 smoke | **成功**：返回合法 `TaskPlan`，熔断器 CLOSED |
 | 真实模型端到端 smoke | **成功**：`status=completed`，调用 `analyze_csv`，4 次模型调用 |
 | 真实任务指标 | MAE=1.35、RMSE=1.4089、R2=0.984876（来自工具结果） |
@@ -21,14 +21,14 @@
 | 真实 smoke 耗时 | 约 46s（多次运行 38–53s 波动） |
 | 真实多 Agent 对话 smoke | **成功**：`data → writing → finish`，6 次模型调用，8605 tokens，约 34s |
 | `.env` | 已按当前 Qwen 配置生成；被 `.gitignore` 忽略，**不进入交付压缩包** |
-| 业务源码是否重写 | 否；v2 基线 + 4 个 P0 修复 + 2 个工程修复 + v3.2 多 Agent 运行时 |
+| 业务源码是否重写 | 否；v2 基线 + 4 个 P0 修复 + 2 个工程修复 + v3.2 多 Agent 运行时 + v3.3 多轮追问 |
 
 ### 新增/修改的关键文件
 
 | 文件 | 变更 |
 |---|---|
 | `app/services/repository.py` | `task_requests` 复合主键迁移；`list_tasks` 按 user；`claim_for_resume` 原子领取 |
-| `app/main.py` | 请求幂等按 user；`GET /tasks` 按 user；`/resume` 条件领取；只接受 `interrupted/failed` |
+| `app/main.py` | 请求幂等按 user；`GET /tasks` 按 user；`/resume` 条件领取；`/conversations/{id}/messages` 多轮追问 |
 | `app/tools/registry.py` | `mark_succeeded` 失败返回 `IDEMPOTENCY_RECORD_FAILED`，不再假装成功 |
 | `app/core/errors.py` | 新增 `IDEMPOTENCY_RECORD_FAILED` |
 | `app/agents/agent_graph.py` | Planner 生成的工具名按 registry 白名单过滤 |
@@ -38,9 +38,9 @@
 | `app/agents/conversation/` | 新增 Supervisor + 4 个独立 Worker + 共享 transcript 运行时 |
 | `app/services/conversation_store.py` | 新增对话持久化（conversations 表） |
 | `app/schemas/conversations.py` | 新增 /conversations 请求/响应 Schema |
-| `tests/test_conversation_multi_agent.py` | 新增 6 个多 Agent 对话测试 |
+| `tests/test_conversation_multi_agent.py` | 新增 7 个多 Agent 对话测试（含多轮追问） |
 | `scripts/conversation_smoke.py` | 新增真实模型多 Agent 对话 smoke |
-| `README.md` | 改写为 v3.2 使用说明与边界 |
+| `README.md` | 改写为 v3.3 使用说明与边界 |
 
 ---
 
@@ -73,12 +73,12 @@ python -m pytest -o addopts="" -q --junitxml=outputs/test-results-v3.xml
 ### 3.2 结果
 
 ```text
-76 passed in 22.64s
+77 passed in 21.82s
 ```
 
 - 原 64 个测试全部保留并通过；
 - 新增 6 个回归测试：跨用户 key、列表隔离、并发 resume、completed 拒绝 resume、mark_succeeded 失败、旧表迁移；
-- 新增 6 个多 Agent 对话测试：data→writing、research→writing、脚本化 research→data（证明无固定边）、max_turns 截断、工具越权拒绝、API 创建/读取/列表；
+- 新增 7 个多 Agent 对话测试：data→writing、research→writing、脚本化 research→data（证明无固定边）、max_turns 截断、工具越权拒绝、API 创建/读取/列表、多轮追问；
 - 测试仍为离线 `MOCK_LLM=1`，不调用真实 API。
 
 证据文件：`outputs/test-results-v3.xml`。
@@ -248,6 +248,8 @@ uvicorn app.main:app --reload
 - 审查报告：`docs/v3/01_技术审查报告.md`
 - P0/P1/P2：`docs/v3/03_问题清单_P0P1P2.md`
 - 本项目的使用说明：`README.md`
+
+
 
 
 

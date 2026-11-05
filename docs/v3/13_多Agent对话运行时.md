@@ -1,8 +1,8 @@
-﻿# 自由对话式多 Agent 调度（v3.2）
+# 自由对话式多 Agent 调度（v3.2 / v3.3）
 
 > 目标：把“单图多角色编排”变成“Supervisor + 独立 Worker + 共享对话”的自由调度。
 > 代码：`app/agents/conversation/`、`app/services/conversation_store.py`、`app/schemas/conversations.py`
-> 入口：`POST /conversations`、`GET /conversations/{id}`、`GET /conversations`
+> 入口：`POST /conversations`、`POST /conversations/{id}/messages`、`GET /conversations/{id}`、`GET /conversations`
 
 ---
 
@@ -176,6 +176,11 @@ curl.exe "http://127.0.0.1:8000/conversations/<id>?user_id=u1"
 
 # 列表
 curl.exe "http://127.0.0.1:8000/conversations?user_id=u1"
+
+# 多轮追问：不重建对话，Supervisor 基于新消息重新调度
+curl.exe -X POST http://127.0.0.1:8000/conversations/<id>/messages `
+  -H "Content-Type: application/json" `
+  -d '{"content":"请用一句话总结上面的指标，并说明样本量局限。","user_id":"u1","extra_turns":2}'
 ```
 
 响应包含：
@@ -208,7 +213,7 @@ curl.exe "http://127.0.0.1:8000/conversations?user_id=u1"
 
 1. **不是“Agent 自治社会”**：Worker 不直接互发私信，所有消息经共享 transcript；Supervisor 是单点调度。
 2. **Supervisor 可能误路由**：真实模型可能过早 finish 或重复选同一 Agent；当前只有 turn 上限和 prompt 约束，没有 handoff 评分。
-3. **没有对话恢复/取消**：`/conversations` 是同步执行；进程崩溃后只能重新创建，未接 LangGraph checkpoint。
+3. **支持多轮追问，但没有对话恢复/取消**：`/conversations` 是同步执行；追加消息可以继续，但进程崩溃后不能从中间节点恢复，也未接 LangGraph checkpoint。
 4. **没有每 Agent 私有记忆**：共享 transcript 是唯一上下文；长对话会膨胀。
 5. **没有并行 Agent**：所有 Worker 串行发言；并行会引入共享状态合并问题。
 6. **真实模型只跑了 1 次 smoke**：不能据此宣称多 Agent 比单 Agent 更好；需要固定评测集。
@@ -220,7 +225,7 @@ curl.exe "http://127.0.0.1:8000/conversations?user_id=u1"
 
 ```powershell
 python -m pytest -o addopts="" -q
-# 76 passed（2026-11-04）
+# 77 passed（2026-11-05）
 ```
 
 新增覆盖：
@@ -229,7 +234,9 @@ python -m pytest -o addopts="" -q
 - `test_research_then_writer_hands_off`：research → writing；
 - `test_max_turns_stops_conversation`：max_turns 截断为 partial；
 - `test_worker_rejects_tool_outside_its_profile`：工具越权拒绝；
-- `test_conversation_api_create_get_list`：API 创建/读取/列表/跨用户 404；\n- `test_runtime_follows_supervisor_choice_not_fixed_order`：脚本化 Supervisor 强制 research→data→finish，证明运行时没有固定边。
+- `test_conversation_api_create_get_list`：API 创建/读取/列表/跨用户 404；
+- `test_runtime_follows_supervisor_choice_not_fixed_order`：脚本化 Supervisor 强制 research→data→finish，证明运行时没有固定边；
+- `test_conversation_supports_user_follow_up`：同一对话追加用户消息后，Supervisor 重新调度并生成新答复。
 
 ---
 

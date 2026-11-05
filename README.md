@@ -1,4 +1,4 @@
-﻿# TaskPilot Agent Platform v3.2
+﻿# TaskPilot Agent Platform v3.3
 
 > 依据《TaskPilot Agent Platform — Agent 工业级升级实战教程》构建的可运行工程。
 > 代码基线：`taskpilot-industrial` v2.0.0-industrial；本目录在其上应用了 v3 审查中的 P0 修复，并接入真实 Qwen 模型。
@@ -25,8 +25,9 @@
 | **P0：`/resume` 原子领取** | **已修复** |
 | **P0：`mark_succeeded` 失败不再报成功** | **已修复** |
 | **自由对话式多 Agent（Supervisor + 4 Worker + 共享 transcript）** | **已实现（v3.2）** |
+| **多轮用户追问（`POST /conversations/{id}/messages`）** | **已实现（v3.3）** |
 | **对话持久化、查询、按用户列表** | **已实现** |
-| 任务队列 / 租约 / 心跳 / 运行中取消 | 未实现（v3.3 计划） |
+| 任务队列 / 租约 / 心跳 / 运行中取消 | 未实现（v3.4 计划） |
 | 真实模型效果评测 / 多租户 RBAC | 未实现 |
 
 ---
@@ -101,7 +102,7 @@ curl.exe -X POST http://127.0.0.1:8000/tasks/<task_id>/approve -H "Content-Type:
   -d '{"user_id":"u1","approved":true,"reason":"确认发送范围"}'
 ```
 
-### 3.2 自由对话式多 Agent（v3.2 新增）
+### 3.2 自由对话式多 Agent（v3.2/v3.3）
 
 `/tasks` 是“单图多角色”；`/conversations` 是“Supervisor + 独立 Worker + 共享对话”：
 
@@ -124,6 +125,14 @@ curl.exe -X POST http://127.0.0.1:8000/conversations `
 - `observations`：工具结果；
 - `final_answer`：Writing Agent 综合后的答复；
 - `agents`：当前可调度 Agent 目录（research/data/writing/general）。
+
+多轮追问（不会重建对话，Supervisor 基于新消息重新调度）：
+
+```powershell
+curl.exe -X POST http://127.0.0.1:8000/conversations/<conversation_id>/messages `
+  -H "Content-Type: application/json" `
+  -d '{"content":"请用一句话总结上面的指标，并说明样本量局限。","user_id":"u1","extra_turns":2}'
+```
 
 设计说明见 `docs/v3/13_多Agent对话运行时.md`；`/tasks` 保留不动，两条路径并存。
 
@@ -149,11 +158,11 @@ curl.exe -X POST http://127.0.0.1:8000/conversations `
 
 ```powershell
 python -m pytest -o addopts="" -q
-# 76 passed in 22.64s（2026-11-04，Windows + Python 3.12.14；多次运行 19–25s）
+# 77 passed in 21.82s（2026-11-05，Windows + Python 3.12.14；多次运行 19–26s）
 ```
 
 证据：`outputs/test-results-v3.xml`。  
-覆盖：原 64 个测试 + 6 个 P0 回归 + 6 个多 Agent 对话测试。
+覆盖：原 64 个测试 + 6 个 P0 回归 + 7 个多 Agent 对话测试。
 
 ### 5.2 真实 Qwen smoke
 
@@ -198,7 +207,7 @@ taskpilot-platform-v3/
 │  ├─ core/                    # 预算、重试、熔断、错误、指标、日志
 │  ├─ services/                # 任务库、幂等、检查点、记忆、LLM、对话存储
 │  └─ tools/                   # ToolRegistry、安全工具
-├─ tests/                      # 76 个测试（含 6 个 P0 回归 + 6 个多 Agent 对话）
+├─ tests/                      # 77 个测试（含 6 个 P0 回归 + 7 个多 Agent 对话）
 ├─ scripts/
 │  ├─ test_llm.py              # 真实模型结构化 smoke
 │  ├─ real_e2e_smoke.py        # 真实模型单图端到端 smoke
@@ -260,6 +269,8 @@ python scripts/real_e2e_smoke.py
 python scripts/conversation_smoke.py
 uvicorn app.main:app --reload
 ```
+
+
 
 
 

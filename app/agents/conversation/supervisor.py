@@ -25,8 +25,10 @@ class MockSupervisor:
     """Deterministic policy used by MOCK_LLM=1 and tests."""
 
     def decide(self, state: ConversationState) -> SupervisorDecision:
-        done = {m.get("agent") for m in state.messages if m.get("role") == "agent"}
-        lower = state.goal.lower()
+        # A follow-up user message starts a new mini-turn: only agents that
+        # spoke after that message count as "already done" for this request.
+        done = self._agents_since_last_user(state)
+        lower = self._latest_user_text(state).lower()
 
         if not done:
             if any(word in lower for word in _DATA_WORDS):
@@ -62,6 +64,25 @@ class MockSupervisor:
             )
         return SupervisorDecision(next_agent="finish", reason="mock: enough evidence or done")
 
+    @staticmethod
+    def _latest_user_text(state: ConversationState) -> str:
+        for message in reversed(state.messages):
+            if message.get("role") == "user" and message.get("content"):
+                return str(message["content"])
+        return state.goal
+
+    @staticmethod
+    def _agents_since_last_user(state: ConversationState) -> set[str]:
+        start = 0
+        for index, message in enumerate(state.messages):
+            if message.get("role") == "user":
+                start = index + 1
+        return {
+            str(message.get("agent"))
+            for message in state.messages[start:]
+            if message.get("role") == "agent" and message.get("agent")
+        }
+
 
 class LLMSupervisor:
     """Real-model supervisor with a deterministic fallback."""
@@ -82,7 +103,7 @@ class LLMSupervisor:
             decision = self.fallback.decide(state)
         finally:
             state.budget = budget.to_dict()
-        done = {m.get("agent") for m in state.messages if m.get("role") == "agent"}
+        done = MockSupervisor._agents_since_last_user(state)
         if decision.next_agent == "finish" and not done:
             # Never end an empty conversation: force one worker turn.
             return self.fallback.decide(state)

@@ -20,6 +20,20 @@ class ConversationRequest(BaseModel):
         return value
 
 
+class ConversationMessageRequest(BaseModel):
+    content: str = Field(min_length=1, max_length=4000)
+    user_id: str = Field(default="local-demo", min_length=1, max_length=100)
+    extra_turns: int = Field(default=2, ge=1, le=8, description="本次追问最多追加的 worker 轮数")
+
+    @field_validator("content")
+    @classmethod
+    def strip_content(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("content 不能为空")
+        return value
+
+
 class ConversationResponse(BaseModel):
     conversation_id: str
     status: str

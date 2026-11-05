@@ -29,7 +29,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.agents.agent_graph import build_agent_graph
-from app.agents.conversation.models import ConversationState
+from app.agents.conversation.models import ConversationState, add_message
 from app.agents.conversation.runtime import ConversationRuntime
 from app.core.budget import ExecutionBudget
 from app.core.config import Settings, get_settings
@@ -40,7 +40,12 @@ from app.core.metrics import METRICS
 from app.core.observability import log_event
 from app.core.ratelimit import SlidingWindowLimiter
 from app.core.timeouts import shutdown_pool
-from app.schemas.conversations import ConversationRequest, ConversationResponse, ConversationSummary
+from app.schemas.conversations import (
+    ConversationMessageRequest,
+    ConversationRequest,
+    ConversationResponse,
+    ConversationSummary,
+)
 from app.schemas.tasks import ApprovalRequest, MemoryWriteRequest, TaskRequest, TaskResponse
 from app.services.checkpoint import CheckpointManager, pending_nodes, thread_config
 from app.services.conversation_store import ConversationStore
@@ -51,7 +56,7 @@ from app.services.repository import TaskRepository
 from app.tools.registry import build_default_registry
 
 logger = logging.getLogger(__name__)
-VERSION = "3.2.0-platform"
+VERSION = "3.3.0-platform"
 
 _PUBLIC_PATHS = {"/health", "/ready", "/docs", "/openapi.json", "/redoc", "/favicon.ico"}
 
@@ -596,6 +601,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not state or state.get("user_id") != user_id:
             raise NotFoundError("对话不存在。")
         return conversation_response(state, ctx)
+
+    @app.post("/conversations/{conversation_id}/messages", response_model=ConversationResponse)
+    def continue_conversation(
+        conversation_id: str,
+        request: ConversationMessageRequest,
+    ) -> ConversationResponse:
+        """Append a user follow-up and let the supervisor dispatch again."""
+
+        ctx = get_ctx()
+        stored = ctx.conversation_store.get(conversation_id)
+        if not stored or stored.get("user_id") != request.user_id:
+            raise NotFoundError("对话不存在。")
+        if stored.get("status") == "running":
+            raise TaskPilotError(
+                "该对话正在执行，不能并发追加消息。",
+                code=ErrorCode.CONFLICT,
+            )
+        state = ConversationState.from_dict(stored)
+        add_message(state, role="user", content=request.content)
+        state.status = "running"
+        state.stop_reason = None
+        state.final_answer = None
+        state.turn = int(state.turn)
+        state.max_turns = max(state.max_turns, state.turn + request.extra_turns)
+        ctx.conversation_store.save(state.to_dict())
+        with scope(task_id=conversation_id, thread_id=conversation_id):
+            final = ctx.conversation_runtime.run(state)
+        METRICS.inc("conversations_total", status=final.status)
+        return conversation_response(final.to_dict(), ctx)
 
     @app.get("/conversations")
     def list_conversations(limit: int = 30, user_id: str = "local-demo") -> dict[str, Any]:

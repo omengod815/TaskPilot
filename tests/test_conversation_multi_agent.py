@@ -150,3 +150,39 @@ def test_conversation_api_create_get_list(settings):
         listed = client.get("/conversations", params={"user_id": "api-conv"})
         assert listed.status_code == 200
         assert any(item["conversation_id"] == body["conversation_id"] for item in listed.json()["items"])
+
+
+def test_conversation_supports_user_follow_up(settings):
+    cfg = settings.model_copy(update={"mock_llm": True, "rate_limit_per_minute": 0, "api_access_token": ""})
+    app = create_app(cfg)
+    with TestClient(app) as client:
+        created = client.post(
+            "/conversations",
+            json={"goal": "分析 sample_predictions.csv 的 MAE", "user_id": "follow-user", "max_turns": 3},
+        )
+        assert created.status_code == 200, created.text
+        first = created.json()
+        assert first["status"] == "completed"
+
+        follow = client.post(
+            f"/conversations/{first['conversation_id']}/messages",
+            json={
+                "content": "请用一句话总结上面的指标，并说明样本量局限。",
+                "user_id": "follow-user",
+                "extra_turns": 2,
+            },
+        )
+        assert follow.status_code == 200, follow.text
+        body = follow.json()
+        assert body["status"] == "completed"
+        user_messages = [m for m in body["messages"] if m.get("role") == "user"]
+        assert len(user_messages) == 2
+        assert user_messages[-1]["content"].startswith("请用一句话总结")
+        assert "MAE" in (body["final_answer"] or "")
+        assert body["turn"] >= first["turn"]
+
+        wrong_user = client.post(
+            f"/conversations/{first['conversation_id']}/messages",
+            json={"content": "继续", "user_id": "other", "extra_turns": 1},
+        )
+        assert wrong_user.status_code == 404

@@ -133,7 +133,7 @@ def test_ready_and_metrics(api, auth):
     assert metrics.status_code == 200
     body = metrics.json()
     assert "llm" in body and "circuit_open_count" in body["llm"]
-    assert body["service"]["version"].startswith("3.2")
+    assert body["service"]["version"].startswith("3.3")
 
 
 def test_resume_interrupted_task(api, auth):

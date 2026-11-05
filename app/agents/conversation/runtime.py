@@ -188,8 +188,9 @@ class ConversationRuntime:
 
     # ------------------------------------------------------------------
     def _finish(self, state: ConversationState) -> str:
+        start = self._last_user_index(state)
         last_agent = next(
-            (m for m in reversed(state.messages) if m.get("role") == "agent"),
+            (m for m in reversed(state.messages[start:]) if m.get("role") == "agent"),
             None,
         )
         if last_agent and last_agent.get("agent") == "writing" and last_agent.get("content"):
@@ -226,9 +227,17 @@ class ConversationRuntime:
         return str(result.get("reply") or "")
 
     @staticmethod
+    def _last_user_index(state: ConversationState) -> int:
+        for index in range(len(state.messages) - 1, -1, -1):
+            if state.messages[index].get("role") == "user":
+                return index
+        return 0
+
+    @staticmethod
     def _best_effort(state: ConversationState) -> str:
+        start = ConversationRuntime._last_user_index(state)
         last_agent = next(
-            (m for m in reversed(state.messages) if m.get("role") == "agent"),
+            (m for m in reversed(state.messages[start:]) if m.get("role") == "agent"),
             None,
         )
         if last_agent and last_agent.get("content"):
