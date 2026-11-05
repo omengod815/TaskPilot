@@ -174,14 +174,20 @@ final_answer: MAE=1.35, RMSE=1.4089, R2=0.984876，并说明样本量仅 8 条
 Supervisor 第一次选择 data（缺少数值证据），第二次选择 writing（数值完成，转写成结论），第三次 finish。  
 证据：`outputs/conversation_real_smoke.json`、`outputs/conversation_real_smoke.txt`。
 
+### 4.6 多轮追问（v3.3）
+
+`POST /conversations/{id}/messages` 在已有 transcript 后追加用户消息，不重建对话；`MockSupervisor` 只把“最后一条 user 消息之后”的 Agent 视为本轮已完成，因此追问会重新调度。`extra_turns` 控制本次最多追加的 worker 轮数。
+
+回归测试 `test_conversation_supports_user_follow_up`：先完成 CSV 分析，再追问“总结指标并说明样本量局限”，返回新的 Writing 答复，且对话内保留两条 user 消息。
+
 ---
 
 ## 5. 没有做/没有验证的
 
 | 项 | 状态 |
 |---|---|
-| 任务队列 / Worker 租约 / 心跳 / reaper | 未实现（v3.3） |
-| 运行中任务取消 | 未实现（v3.3） |
+| 任务队列 / Worker 租约 / 心跳 / reaper | 未实现（v3.4） |
+| 运行中任务取消 | 未实现（v3.4） |
 | 任务级单写者（多 worker） | 未实现；当前只有工具幂等 |
 | 对话恢复/取消 | 未实现；`/conversations` 同步执行，未接 checkpoint |
 | 真实模型质量评测（多任务/rubric/回归） | 未做；只有 3 类 smoke |
@@ -248,6 +254,7 @@ uvicorn app.main:app --reload
 - 审查报告：`docs/v3/01_技术审查报告.md`
 - P0/P1/P2：`docs/v3/03_问题清单_P0P1P2.md`
 - 本项目的使用说明：`README.md`
+
 
 
 
