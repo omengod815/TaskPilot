@@ -1,4 +1,4 @@
-﻿# TaskPilot Agent Platform v3.3
+﻿# TaskPilot Agent Platform v3.4
 
 > 依据《TaskPilot Agent Platform — Agent 工业级升级实战教程》构建的可运行工程。
 > 代码基线：`taskpilot-industrial` v2.0.0-industrial；本目录在其上应用了 v3 审查中的 P0 修复，并接入真实 Qwen 模型。
@@ -26,9 +26,12 @@
 | **P0：`mark_succeeded` 失败不再报成功** | **已修复** |
 | **自由对话式多 Agent（Supervisor + 4 Worker + 共享 transcript）** | **已实现（v3.2）** |
 | **多轮用户追问（`POST /conversations/{id}/messages`）** | **已实现（v3.3）** |
+| **对话恢复（`POST /conversations/{id}/resume`）** | **已实现（v3.4，协作式）** |
+| **对话取消（`POST /conversations/{id}/cancel`）** | **已实现（v3.4，turn 边界）** |
+| **固定 8 任务多 Agent 评测集** | **已实现（v3.4，mock+real 均 8/8）** |
 | **对话持久化、查询、按用户列表** | **已实现** |
-| 任务队列 / 租约 / 心跳 / 运行中取消 | 未实现（v3.4 计划） |
-| 真实模型效果评测 / 多租户 RBAC | 未实现 |
+| 任务队列 / 租约 / 心跳 / 强杀式取消 | 未实现（v3.5 计划） |
+| 多租户 RBAC / 统计显著性评测 | 未实现 |
 
 ---
 
@@ -102,7 +105,7 @@ curl.exe -X POST http://127.0.0.1:8000/tasks/<task_id>/approve -H "Content-Type:
   -d '{"user_id":"u1","approved":true,"reason":"确认发送范围"}'
 ```
 
-### 3.2 自由对话式多 Agent（v3.2/v3.3）
+### 3.2 自由对话式多 Agent（v3.2–v3.4）
 
 `/tasks` 是“单图多角色”；`/conversations` 是“Supervisor + 独立 Worker + 共享对话”：
 
@@ -134,7 +137,26 @@ curl.exe -X POST http://127.0.0.1:8000/conversations/<conversation_id>/messages 
   -d '{"content":"请用一句话总结上面的指标，并说明样本量局限。","user_id":"u1","extra_turns":2}'
 ```
 
-设计说明见 `docs/v3/13_多Agent对话运行时.md`；`/tasks` 保留不动，两条路径并存。
+恢复/取消（协作式，取消在 turn 边界生效）：
+
+```powershell
+# 恢复 partial/failed/interrupted/cancelled
+curl.exe -X POST http://127.0.0.1:8000/conversations/<id>/resume `
+  -H "Content-Type: application/json" `
+  -d '{"user_id":"u1","extra_turns":2}'
+
+# 取消 running 对话
+curl.exe -X POST "http://127.0.0.1:8000/conversations/<id>/cancel?user_id=u1"
+```
+
+固定评测集（8 条任务；mock 免费，real 消耗 Qwen 配额）：
+
+```powershell
+python scripts/eval_conversations.py
+python scripts/eval_conversations.py --real
+```
+
+设计说明见 `docs/v3/13_多Agent对话运行时.md` 与 `docs/v3/14_对话恢复取消与多Agent评测.md`；`/tasks` 保留不动，两条路径并存。
 
 ---
 
@@ -158,11 +180,11 @@ curl.exe -X POST http://127.0.0.1:8000/conversations/<conversation_id>/messages 
 
 ```powershell
 python -m pytest -o addopts="" -q
-# 77 passed in 21.82s（2026-11-05，Windows + Python 3.12.14；多次运行 19–26s）
+# 83 passed in 21.46s（2026-11-24，Windows + Python 3.12.14）
 ```
 
 证据：`outputs/test-results-v3.xml`。  
-覆盖：原 64 个测试 + 6 个 P0 回归 + 7 个多 Agent 对话测试。
+覆盖：原 64 个测试 + 6 个 P0 回归 + 8 个多 Agent 对话 + 4 个恢复/取消 + 1 个评测套件校验。
 
 ### 5.2 真实 Qwen smoke
 
@@ -193,7 +215,21 @@ python scripts/conversation_smoke.py # 自由对话多 Agent：data → writing 
 
 证据：`outputs/conversation_real_smoke.json`、`outputs/conversation_real_smoke.txt`。
 
-> 这是一次 smoke，不是质量评测；样本量 1，不能据此宣称“准确率 X%”。
+真实模型多轮 smoke（2026-11-24）：
+
+- `scripts/conversation_multiturn_smoke.py`：同一对话两轮，`first_status=completed`、`follow_status=completed`
+- 2 条 user 消息，`agents=[data, writing, writing]`，turn=3，8 次模型调用，11441 tokens
+- 追问答复保留 MAE/RMSE/R2，并说明样本量仅 8 行
+
+证据：`outputs/conversation_multiturn_real_smoke.json`、`outputs/conversation_multiturn_real_smoke.txt`。
+
+固定 8 任务评测集（2026-11-24）：
+
+- mock：8/8；real：8/8
+- real 平均 6.5 次模型调用、11413.1 tokens、59.93s/任务
+- 评测结果：`outputs/conversation_eval.json`、`outputs/conversation_eval.md`；mock 证据另存 `outputs/conversation_eval_mock.json`
+
+> 这是固定回归集，不是统计基准；8 条任务、单模型、单次运行，不能据此宣称“多 Agent 普遍优于单 Agent”。
 
 ---
 
@@ -207,13 +243,17 @@ taskpilot-platform-v3/
 │  ├─ core/                    # 预算、重试、熔断、错误、指标、日志
 │  ├─ services/                # 任务库、幂等、检查点、记忆、LLM、对话存储
 │  └─ tools/                   # ToolRegistry、安全工具
-├─ tests/                      # 77 个测试（含 6 个 P0 回归 + 7 个多 Agent 对话）
+├─ tests/                      # 83 个测试（含 P0、对话、恢复/取消、评测套件校验）
 ├─ scripts/
 │  ├─ test_llm.py              # 真实模型结构化 smoke
 │  ├─ real_e2e_smoke.py        # 真实模型单图端到端 smoke
 │  ├─ conversation_smoke.py    # 真实模型多 Agent 对话 smoke
+│  ├─ conversation_multiturn_smoke.py # 真实模型多轮 smoke
+│  ├─ eval_conversations.py    # 固定 8 任务评测
 │  └─ crash_runner.py          # 子进程崩溃恢复
-├─ docs/                       # 原有架构/审计/测试文档
+├─ evals/
+│  └─ conversation_suite.json  # 固定多 Agent 评测集
+├─ docs/                       # 架构/审计/测试/多 Agent 开发文档
 ├─ data/                       # SQLite（运行后生成，已 gitignore）
 ├─ outputs/                    # 测试报告/真实 smoke 证据
 ├─ requirements.txt
@@ -226,16 +266,16 @@ taskpilot-platform-v3/
 ## 7. 已知限制（不要写成“生产级”）
 
 1. **单机 SQLite、同步执行**：没有任务队列；`POST /tasks` 返回时任务已结束。
-2. **没有任务租约/心跳/运行中取消**：`/resume` 原子领取已修，但多 worker 任务级单写者仍未实现。
-3. **真实模型未做质量评测**：只有 1 次 smoke；没有固定评测集/rubric/回归。
-4. **Trace 缺节点耗时、`model_call_id`、任务级 Token 归因**。
-5. **`user_id` 仍由请求传入**：不是认证；多租户/RBAC 未实现。
-6. **Docker/MCP/Gradio 未在本环境验证**。
-7. **线程式工具超时是“放弃等待”**，不能强杀阻塞线程。
-8. **熔断跨进程共享**有实现，但测试不是双进程。
-9. **多 Agent 对话没有恢复/取消**：`/conversations` 同步执行；进程崩溃后只能重建，未接 checkpoint。
-10. **不是自治 Agent 社会**：Worker 不直接私聊，Supervisor 是单点调度；误路由只有 turn 上限兜底。
-11. **多 Agent 只跑了 1 次真实 smoke**：不能证明“多 Agent 一定优于单 Agent”，需要固定评测集。
+2. **任务级没有租约/心跳/强杀式取消**：对话有协作式取消和恢复；任务级多 worker 单写者仍未实现。
+3. **固定评测集只有 8 条**：mock/real 均 8/8，但不是统计基准，不能证明普遍优于单 Agent。
+4. **对话恢复不是节点级重放**：没有 LangGraph checkpoint 的逐节点恢复；取消不能中断已经发出的模型/工具调用。
+5. **Trace 缺节点耗时、`model_call_id`、任务级 Token 归因**。
+6. **`user_id` 仍由请求传入**：不是认证；多租户/RBAC 未实现。
+7. **Docker/MCP/Gradio 未在本环境验证**。
+8. **线程式工具超时是“放弃等待”**，不能强杀阻塞线程。
+9. **熔断跨进程共享**有实现，但测试不是双进程。
+10. **不是自治 Agent 社会**：Worker 不直接私聊，Supervisor 是单点调度；误路由只有 turn 上限和重复 Agent 兜底。
+11. **多 Agent 真实评测只有 8 条**：覆盖主路径，但不是统计显著性评测。
 
 ---
 
@@ -245,6 +285,7 @@ taskpilot-platform-v3/
 - `docs/审计报告.md`：v2 基线 P0–P3
 - `docs/测试报告.md`：原 64 个测试说明
 - `docs/v3/13_多Agent对话运行时.md`：Supervisor/Worker/共享对话设计与边界
+- `docs/v3/14_对话恢复取消与多Agent评测.md`：恢复/取消语义、真实多轮 smoke、固定评测集
 - 上级工作区 `docs/v3/`：v3.0 教程、审查报告、P0/P1/P2、面试题、路线图
 
 ---
@@ -267,8 +308,12 @@ $env:MOCK_LLM="0"
 python scripts/test_llm.py
 python scripts/real_e2e_smoke.py
 python scripts/conversation_smoke.py
+python scripts/conversation_multiturn_smoke.py
+python scripts/eval_conversations.py
+python scripts/eval_conversations.py --real
 uvicorn app.main:app --reload
 ```
+
 
 
 

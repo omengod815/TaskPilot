@@ -51,13 +51,22 @@ class ConversationRuntime:
     def run(self, state: ConversationState) -> ConversationState:
         if not any(m.get("role") == "user" for m in state.messages):
             add_message(state, role="user", content=state.goal)
+        latest = self.store.get(state.conversation_id)
+        if latest and latest.get("cancel_requested"):
+            state.cancel_requested = True
         state.status = "running"
         state.stop_reason = None
         state.updated_at = utc_now()
         self.store.save(state.to_dict())
 
         try:
+            if self._cancel_requested(state):
+                self._mark_cancelled(state)
+                return state
             while state.turn < state.max_turns:
+                if self._cancel_requested(state):
+                    self._mark_cancelled(state)
+                    break
                 decision = self.supervisor.decide(state)
                 now = utc_now()
                 state.handoffs.append(
@@ -90,6 +99,9 @@ class ConversationRuntime:
                 )
 
                 if decision.next_agent == "finish":
+                    if self._cancel_requested(state):
+                        self._mark_cancelled(state)
+                        break
                     state.final_answer = self._finish(state)
                     state.status = "completed"
                     state.stop_reason = "finished"
@@ -139,6 +151,9 @@ class ConversationRuntime:
                 METRICS.inc("conversation_agent_turns_total", agent=worker.profile.name, outcome="ok")
                 state.updated_at = utc_now()
                 self.store.save(state.to_dict())
+                if self._cancel_requested(state):
+                    self._mark_cancelled(state)
+                    break
             else:
                 state.status = "partial"
                 state.stop_reason = "max_turns_exceeded"
@@ -185,6 +200,31 @@ class ConversationRuntime:
             state.updated_at = utc_now()
             self.store.save(state.to_dict())
         return state
+
+    # ------------------------------------------------------------------
+    def _cancel_requested(self, state: ConversationState) -> bool:
+        if state.cancel_requested:
+            return True
+        latest = self.store.get(state.conversation_id)
+        if latest and latest.get("cancel_requested"):
+            state.cancel_requested = True
+            return True
+        return False
+
+    def _mark_cancelled(self, state: ConversationState) -> None:
+        state.status = "cancelled"
+        state.stop_reason = "cancelled_by_user"
+        state.final_answer = self._best_effort(state)
+        state.trace.append(
+            {
+                "at": utc_now(),
+                "node": "runtime",
+                "turn": state.turn,
+                "status": "cancelled",
+                "error": "cancelled_by_user",
+            }
+        )
+        METRICS.inc("conversation_agent_turns_total", agent="runtime", outcome="cancelled")
 
     # ------------------------------------------------------------------
     def _finish(self, state: ConversationState) -> str:

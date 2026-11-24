@@ -9,8 +9,13 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
 
 def _dump(value: Any) -> str:
@@ -86,6 +91,96 @@ class ConversationStore:
                 (conversation_id,),
             ).fetchone()
         return json.loads(row["state_json"]) if row else None
+
+    def request_cancel(self, conversation_id: str, user_id: str) -> dict[str, Any] | None:
+        """Set the cooperative cancel flag; only a running conversation is cancellable."""
+
+        conn = self._connect()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT state_json FROM conversations WHERE conversation_id=?",
+                (conversation_id,),
+            ).fetchone()
+            if row is None:
+                conn.rollback()
+                return None
+            state = json.loads(row["state_json"])
+            if state.get("user_id") != user_id:
+                conn.rollback()
+                return None
+            if state.get("status") != "running":
+                conn.rollback()
+                return state
+            state["cancel_requested"] = True
+            state["updated_at"] = _now()
+            conn.execute(
+                "UPDATE conversations SET state_json=?, updated_at=? WHERE conversation_id=?",
+                (_dump(state), state["updated_at"], conversation_id),
+            )
+            conn.commit()
+            return state
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    def claim_for_resume(
+        self,
+        conversation_id: str,
+        user_id: str,
+        *,
+        extra_turns: int,
+    ) -> dict[str, Any] | None:
+        """Atomically move a finished/failed conversation back to running."""
+
+        conn = self._connect()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT state_json FROM conversations WHERE conversation_id=?",
+                (conversation_id,),
+            ).fetchone()
+            if row is None:
+                conn.rollback()
+                return None
+            state = json.loads(row["state_json"])
+            if state.get("user_id") != user_id:
+                conn.rollback()
+                return None
+            if state.get("status") not in {"partial", "failed", "interrupted", "cancelled"}:
+                conn.rollback()
+                return None
+            state["status"] = "running"
+            state["cancel_requested"] = False
+            state["stop_reason"] = None
+            state["final_answer"] = None
+            state["max_turns"] = max(
+                int(state.get("max_turns", 6)),
+                int(state.get("turn", 0)) + extra_turns,
+            )
+            state["updated_at"] = _now()
+            conn.execute(
+                """
+                UPDATE conversations
+                   SET status=?, state_json=?, updated_at=?
+                 WHERE conversation_id=?
+                """,
+                (
+                    state["status"],
+                    _dump(state),
+                    state["updated_at"],
+                    conversation_id,
+                ),
+            )
+            conn.commit()
+            return state
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
     def list_conversations(self, *, user_id: str, limit: int = 30) -> list[dict[str, Any]]:
         with self._connect() as conn:

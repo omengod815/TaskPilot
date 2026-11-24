@@ -1,8 +1,9 @@
-# 自由对话式多 Agent 调度（v3.2 / v3.3）
+# 自由对话式多 Agent 调度（v3.2–v3.4）
 
 > 目标：把“单图多角色编排”变成“Supervisor + 独立 Worker + 共享对话”的自由调度。
 > 代码：`app/agents/conversation/`、`app/services/conversation_store.py`、`app/schemas/conversations.py`
-> 入口：`POST /conversations`、`POST /conversations/{id}/messages`、`GET /conversations/{id}`、`GET /conversations`
+> 入口：`POST /conversations`、`POST /conversations/{id}/messages`、`POST /conversations/{id}/resume`、`POST /conversations/{id}/cancel`、`GET /conversations/{id}`、`GET /conversations`
+> v3.4 补充：`docs/v3/14_对话恢复取消与多Agent评测.md`
 
 ---
 
@@ -213,7 +214,7 @@ curl.exe -X POST http://127.0.0.1:8000/conversations/<id>/messages `
 
 1. **不是“Agent 自治社会”**：Worker 不直接互发私信，所有消息经共享 transcript；Supervisor 是单点调度。
 2. **Supervisor 可能误路由**：真实模型可能过早 finish 或重复选同一 Agent；当前只有 turn 上限和 prompt 约束，没有 handoff 评分。
-3. **支持多轮追问，但没有对话恢复/取消**：`/conversations` 是同步执行；追加消息可以继续，但进程崩溃后不能从中间节点恢复，也未接 LangGraph checkpoint。
+3. **支持多轮追问、协作式恢复/取消，但没有节点级重放**：追加消息可以继续；`resume` 从已保存的对话状态继续；`cancel` 在 turn 边界生效，不能中断已经发出的模型/工具调用，也未接 LangGraph 节点级 checkpoint。
 4. **没有每 Agent 私有记忆**：共享 transcript 是唯一上下文；长对话会膨胀。
 5. **没有并行 Agent**：所有 Worker 串行发言；并行会引入共享状态合并问题。
 6. **真实模型只跑了 1 次 smoke**：不能据此宣称多 Agent 比单 Agent 更好；需要固定评测集。
@@ -225,7 +226,7 @@ curl.exe -X POST http://127.0.0.1:8000/conversations/<id>/messages `
 
 ```powershell
 python -m pytest -o addopts="" -q
-# 77 passed（2026-11-05）
+# 83 passed（2026-11-24）
 ```
 
 新增覆盖：
@@ -236,14 +237,17 @@ python -m pytest -o addopts="" -q
 - `test_worker_rejects_tool_outside_its_profile`：工具越权拒绝；
 - `test_conversation_api_create_get_list`：API 创建/读取/列表/跨用户 404；
 - `test_runtime_follows_supervisor_choice_not_fixed_order`：脚本化 Supervisor 强制 research→data→finish，证明运行时没有固定边；
-- `test_conversation_supports_user_follow_up`：同一对话追加用户消息后，Supervisor 重新调度并生成新答复。
+- `test_conversation_supports_user_follow_up`：同一对话追加用户消息后，Supervisor 重新调度并生成新答复；
+- `test_partial_conversation_can_resume`：partial 对话恢复；
+- `test_cancel_flag_stops_runtime_before_next_turn`：取消标记在 turn 边界停止；
+- `test_supervisor_repeat_guard_does_not_call_same_agent`：真实 Supervisor 重复选择时降级。
 
 ---
 
 ## 10. 下一步
 
-1. 对话恢复：把 `ConversationState` 每轮写 checkpoint，支持 `POST /conversations/{id}/resume`。
-2. 取消：协作式 cancel token。
-3. Supervisor 评测：固定 20 条多 Agent 任务，统计 handoff 正确率、完成率、Token。
+1. 对话恢复升级为节点级 checkpoint；当前只恢复已保存的对话状态。
+2. 取消升级为可中断的模型/工具调用；当前是协作式 turn 边界取消。
+3. 把固定 8 条评测扩到 20–30 条，加入 handoff 质量和成本上限。
 4. 每 Agent 私有摘要：共享 transcript 只保留最近 N 条 + 各 Agent 摘要，控制上下文。
 5. 并行 Worker：只允许只读 Agent 并行，写操作仍串行。

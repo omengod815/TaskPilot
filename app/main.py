@@ -44,6 +44,7 @@ from app.schemas.conversations import (
     ConversationMessageRequest,
     ConversationRequest,
     ConversationResponse,
+    ConversationResumeRequest,
     ConversationSummary,
 )
 from app.schemas.tasks import ApprovalRequest, MemoryWriteRequest, TaskRequest, TaskResponse
@@ -56,7 +57,7 @@ from app.services.repository import TaskRepository
 from app.tools.registry import build_default_registry
 
 logger = logging.getLogger(__name__)
-VERSION = "3.3.0-platform"
+VERSION = "3.4.0-platform"
 
 _PUBLIC_PATHS = {"/health", "/ready", "/docs", "/openapi.json", "/redoc", "/favicon.ico"}
 
@@ -318,6 +319,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             budget=state.get("budget") or {},
             final_answer=state.get("final_answer"),
             stop_reason=state.get("stop_reason"),
+            cancel_requested=bool(state.get("cancel_requested", False)),
             degraded_reasons=state.get("degraded_reasons") or [],
             agents=ctx.conversation_runtime.supervisor.catalog(),
         )
@@ -626,6 +628,64 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         state.turn = int(state.turn)
         state.max_turns = max(state.max_turns, state.turn + request.extra_turns)
         ctx.conversation_store.save(state.to_dict())
+        with scope(task_id=conversation_id, thread_id=conversation_id):
+            final = ctx.conversation_runtime.run(state)
+        METRICS.inc("conversations_total", status=final.status)
+        return conversation_response(final.to_dict(), ctx)
+
+    @app.post("/conversations/{conversation_id}/cancel")
+    def cancel_conversation(
+        conversation_id: str,
+        user_id: str = "local-demo",
+    ) -> dict[str, Any]:
+        """Cooperative cancel; the runtime stops at the next turn boundary."""
+
+        ctx = get_ctx()
+        stored = ctx.conversation_store.get(conversation_id)
+        if not stored or stored.get("user_id") != user_id:
+            raise NotFoundError("对话不存在。")
+        if stored.get("status") != "running":
+            raise TaskPilotError(
+                "对话已结束，不能取消。",
+                code=ErrorCode.CONFLICT,
+            )
+        updated = ctx.conversation_store.request_cancel(conversation_id, user_id)
+        if not updated or not updated.get("cancel_requested"):
+            raise TaskPilotError(
+                "对话状态已变化，取消失败。",
+                code=ErrorCode.CONFLICT,
+            )
+        return {
+            "conversation_id": conversation_id,
+            "status": "cancelling",
+            "cancel_requested": True,
+        }
+
+    @app.post("/conversations/{conversation_id}/resume", response_model=ConversationResponse)
+    def resume_conversation(
+        conversation_id: str,
+        request: ConversationResumeRequest,
+    ) -> ConversationResponse:
+        ctx = get_ctx()
+        stored = ctx.conversation_store.get(conversation_id)
+        if not stored or stored.get("user_id") != request.user_id:
+            raise NotFoundError("对话不存在。")
+        if stored.get("status") not in {"partial", "failed", "interrupted", "cancelled"}:
+            raise TaskPilotError(
+                "只有 partial/failed/interrupted/cancelled 对话可以恢复。",
+                code=ErrorCode.CONFLICT,
+            )
+        claimed = ctx.conversation_store.claim_for_resume(
+            conversation_id,
+            request.user_id,
+            extra_turns=request.extra_turns,
+        )
+        if not claimed:
+            raise TaskPilotError(
+                "对话状态已变化，恢复失败。",
+                code=ErrorCode.CONFLICT,
+            )
+        state = ConversationState.from_dict(claimed)
         with scope(task_id=conversation_id, thread_id=conversation_id):
             final = ctx.conversation_runtime.run(state)
         METRICS.inc("conversations_total", status=final.status)

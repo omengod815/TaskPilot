@@ -364,6 +364,7 @@ class WorkerAgent:
     def _writing_reply(self, state: ConversationState, instruction: str) -> str:
         data_obs = self._last_observation_any(state, "analyze_csv")
         research_obs = self._last_observation_any(state, "search_web")
+        calc_obs = self._last_observation_any(state, "safe_calculate")
         parts = ["## 综合结论"]
         if data_obs and data_obs.get("ok"):
             data = data_obs.get("data") or {}
@@ -376,6 +377,9 @@ class WorkerAgent:
             results = (research_obs.get("data") or {}).get("results") or []
             excerpts = [str(item.get("excerpt", ""))[:200] for item in results[:2] if item.get("excerpt")]
             parts.append(f"资料要点：{' | '.join(excerpts) if excerpts else '已检索到资料，但摘要为空'}。")
+        if calc_obs and calc_obs.get("ok"):
+            calc_data = calc_obs.get("data") or {}
+            parts.append(f"计算结果：{calc_data.get('expression', '')} = {calc_data.get('result', '')}。")
         if len(parts) == 1:
             parts.append("本次对话没有产生工具证据；以下结论仅基于对话内容，不能当作事实核验结果。")
         parts.append("局限：证据来自受控工具观察；样本量/来源时效性未进一步核验。")

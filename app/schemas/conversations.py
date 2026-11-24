@@ -34,6 +34,11 @@ class ConversationMessageRequest(BaseModel):
         return value
 
 
+class ConversationResumeRequest(BaseModel):
+    user_id: str = Field(default="local-demo", min_length=1, max_length=100)
+    extra_turns: int = Field(default=2, ge=1, le=8, description="恢复后最多追加的 worker 轮数")
+
+
 class ConversationResponse(BaseModel):
     conversation_id: str
     status: str
@@ -49,6 +54,7 @@ class ConversationResponse(BaseModel):
     budget: dict[str, Any] = Field(default_factory=dict)
     final_answer: str | None = None
     stop_reason: str | None = None
+    cancel_requested: bool = False
     degraded_reasons: list[str] = Field(default_factory=list)
     agents: list[dict[str, Any]] = Field(default_factory=list)
 

@@ -1,0 +1,141 @@
+{
+  "version": "1.0",
+  "description": "TaskPilot fixed multi-agent conversation evaluation suite. Mock mode is deterministic; --real uses the configured Qwen model.",
+  "tasks": [
+    {
+      "id": "csv_metrics",
+      "goal": "分析 sample_predictions.csv 的 MAE、RMSE 和 R2",
+      "max_turns": 3,
+      "expected_agents": [
+        "data",
+        "writing"
+      ],
+      "required_tools": [
+        "analyze_csv"
+      ],
+      "answer_contains": [
+        "MAE",
+        "1.35"
+      ],
+      "max_model_calls": 8
+    },
+    {
+      "id": "research_summary",
+      "goal": "调研 Agent 记忆机制并写一段总结",
+      "max_turns": 5,
+      "expected_agents": [
+        "research",
+        "writing"
+      ],
+      "required_tools": [
+        "search_web"
+      ],
+      "answer_contains": [],
+      "max_model_calls": 12,
+      "answer_any": [
+        "资料",
+        "证据",
+        "检索"
+      ]
+    },
+    {
+      "id": "safe_calc",
+      "goal": "计算 (2+3)*4 的结果",
+      "max_turns": 3,
+      "expected_agents": [
+        "general",
+        "writing"
+      ],
+      "required_tools": [
+        "safe_calculate"
+      ],
+      "answer_contains": [
+        "20"
+      ],
+      "max_model_calls": 8
+    },
+    {
+      "id": "writing_only",
+      "goal": "写一段项目总结，说明当前边界",
+      "max_turns": 3,
+      "expected_agents": [
+        "writing"
+      ],
+      "required_tools": [],
+      "answer_contains": [],
+      "max_model_calls": 6,
+      "answer_any": [
+        "边界",
+        "局限",
+        "综合结论"
+      ]
+    },
+    {
+      "id": "data_limitations",
+      "goal": "分析 sample_predictions.csv 并说明样本量局限",
+      "max_turns": 3,
+      "expected_agents": [
+        "data",
+        "writing"
+      ],
+      "required_tools": [
+        "analyze_csv"
+      ],
+      "answer_contains": [
+        "8"
+      ],
+      "max_model_calls": 8
+    },
+    {
+      "id": "mixed_research_data",
+      "goal": "调研 Agent 记忆机制并分析 sample_predictions.csv 的 MAE",
+      "max_turns": 4,
+      "expected_agents": [
+        "research",
+        "data",
+        "writing"
+      ],
+      "required_tools": [
+        "search_web",
+        "analyze_csv"
+      ],
+      "answer_contains": [
+        "MAE"
+      ],
+      "max_model_calls": 12
+    },
+    {
+      "id": "general_explain",
+      "goal": "解释什么是 Agent 的有界 ReAct 循环",
+      "max_turns": 3,
+      "expected_agents": [
+        "general",
+        "writing"
+      ],
+      "required_tools": [],
+      "answer_contains": [
+        "局限"
+      ],
+      "max_model_calls": 8
+    },
+    {
+      "id": "csv_follow_up",
+      "goal": "分析 sample_predictions.csv 的 MAE",
+      "follow_up": "请用一句话总结指标并说明样本量局限",
+      "max_turns": 3,
+      "extra_turns": 2,
+      "expected_agents": [
+        "data",
+        "writing"
+      ],
+      "required_tools": [
+        "analyze_csv"
+      ],
+      "answer_contains": [
+        "MAE",
+        "8"
+      ],
+      "max_model_calls": 12
+    }
+  ]
+}

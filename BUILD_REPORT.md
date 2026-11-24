@@ -1,6 +1,6 @@
-﻿# TaskPilot v3.3 构建报告
+# TaskPilot v3.4 构建报告
 
-> 构建日期：2026-11-04
+> 构建日期：2026-11-04；v3.4 更新：2026-11-24
 > 目标：根据《TaskPilot Agent Platform — Agent 工业级升级实战教程》构建一个可运行项目
 > 新目录：`taskpilot-platform-v3/`
 > 代码基线：`taskpilot-industrial/` v2.0.0-industrial
@@ -13,15 +13,17 @@
 | 项 | 结果 |
 |---|---|
 | 项目目录 | `taskpilot-platform-v3/` |
-| 自动化测试 | **77 passed，0 failed，21.82s**（2026-11-05；多次运行 19–26s） |
+| 自动化测试 | **83 passed，0 failed，21.46s**（2026-11-24） |
 | 真实模型结构化 smoke | **成功**：返回合法 `TaskPlan`，熔断器 CLOSED |
 | 真实模型端到端 smoke | **成功**：`status=completed`，调用 `analyze_csv`，4 次模型调用 |
 | 真实任务指标 | MAE=1.35、RMSE=1.4089、R2=0.984876（来自工具结果） |
 | 真实 smoke Token | 7403（多次运行 7.0k–8.1k 波动） |
 | 真实 smoke 耗时 | 约 46s（多次运行 38–53s 波动） |
 | 真实多 Agent 对话 smoke | **成功**：`data → writing → finish`，6 次模型调用，8605 tokens，约 34s |
+| 真实多轮对话 smoke | **成功**：同一对话 2 轮，8 次模型调用，11441 tokens | 
+| 固定多 Agent 评测 | **mock 8/8，real 8/8**；real 平均 6.5 次调用、11413 tokens、59.93s/任务 |
 | `.env` | 已按当前 Qwen 配置生成；被 `.gitignore` 忽略，**不进入交付压缩包** |
-| 业务源码是否重写 | 否；v2 基线 + 4 个 P0 修复 + 2 个工程修复 + v3.2 多 Agent 运行时 + v3.3 多轮追问 |
+| 业务源码是否重写 | 否；v2 基线 + 4 个 P0 修复 + 2 个工程修复 + v3.2 多 Agent 运行时 + v3.3 多轮追问 + v3.4 恢复/取消与固定评测 |
 
 ### 新增/修改的关键文件
 
@@ -38,9 +40,15 @@
 | `app/agents/conversation/` | 新增 Supervisor + 4 个独立 Worker + 共享 transcript 运行时 |
 | `app/services/conversation_store.py` | 新增对话持久化（conversations 表） |
 | `app/schemas/conversations.py` | 新增 /conversations 请求/响应 Schema |
-| `tests/test_conversation_multi_agent.py` | 新增 7 个多 Agent 对话测试（含多轮追问） |
+| `tests/test_conversation_multi_agent.py` | 新增 8 个多 Agent 对话测试（含多轮追问、重复 Agent 保护） |
 | `scripts/conversation_smoke.py` | 新增真实模型多 Agent 对话 smoke |
-| `README.md` | 改写为 v3.3 使用说明与边界 |
+| `scripts/conversation_multiturn_smoke.py` | 新增真实模型多轮 smoke |
+| `scripts/eval_conversations.py` | 新增固定 8 任务评测脚本（mock/real） |
+| `evals/conversation_suite.json` | 新增固定多 Agent 评测集 |
+| `tests/test_conversation_resume_cancel.py` | 新增 4 个恢复/取消测试 |
+| `tests/test_conversation_eval_suite.py` | 新增评测套件结构校验 |
+| `docs/v3/14_对话恢复取消与多Agent评测.md` | 新增 v3.4 开发文档 |
+| `README.md` | 改写为 v3.4 使用说明与边界 |
 
 ---
 
@@ -73,12 +81,14 @@ python -m pytest -o addopts="" -q --junitxml=outputs/test-results-v3.xml
 ### 3.2 结果
 
 ```text
-77 passed in 21.82s
+83 passed in 21.46s
 ```
 
 - 原 64 个测试全部保留并通过；
 - 新增 6 个回归测试：跨用户 key、列表隔离、并发 resume、completed 拒绝 resume、mark_succeeded 失败、旧表迁移；
-- 新增 7 个多 Agent 对话测试：data→writing、research→writing、脚本化 research→data（证明无固定边）、max_turns 截断、工具越权拒绝、API 创建/读取/列表、多轮追问；
+- 新增 8 个多 Agent 对话测试：data→writing、research→writing、脚本化 research→data（证明无固定边）、max_turns 截断、工具越权拒绝、API 创建/读取/列表、多轮追问、重复 Agent 保护；
+- 新增 4 个恢复/取消测试：partial 恢复、取消标记、取消 API、恢复 API 与 completed 拒绝；
+- 新增 1 个评测套件结构校验测试；
 - 测试仍为离线 `MOCK_LLM=1`，不调用真实 API。
 
 证据文件：`outputs/test-results-v3.xml`。
@@ -180,17 +190,56 @@ Supervisor 第一次选择 data（缺少数值证据），第二次选择 writin
 
 回归测试 `test_conversation_supports_user_follow_up`：先完成 CSV 分析，再追问“总结指标并说明样本量局限”，返回新的 Writing 答复，且对话内保留两条 user 消息。
 
+### 4.7 真实模型多轮 smoke（2026-11-24）
+
+```text
+first_status=completed
+follow_status=completed
+user_messages=2
+agents=[data, writing, writing]
+turn=3, max_turns=4
+model_calls=8, tokens=11441
+```
+
+追问答复：“MAE 为 1.35、RMSE 为 1.4089、R2 为 0.984876，但样本量仅 8 行……”。
+证据：`outputs/conversation_multiturn_real_smoke.json` / `.txt`。
+
+### 4.8 恢复 / 取消（v3.4）
+
+- `POST /conversations/{id}/resume`：只接受 partial/failed/interrupted/cancelled；`claim_for_resume()` 用 `BEGIN IMMEDIATE` 原子领取；`extra_turns` 扩展 `max_turns`。
+- `POST /conversations/{id}/cancel`：只对 running 生效；写 `cancel_requested`；Runtime 在 turn 边界检查并停止；已完成对话返回 409。
+- 取消是协作式的，不能中断已经发出的模型/工具调用；恢复不是节点级重放。
+
+回归测试：`test_partial_conversation_can_resume`、`test_cancel_flag_stops_runtime_before_next_turn`、`test_cancel_endpoint_marks_running_conversation`、`test_resume_api_and_completed_rejection`。
+
+### 4.9 固定多 Agent 评测（v3.4）
+
+套件：`evals/conversation_suite.json`（8 条，含多轮追问）。
+脚本：`scripts/eval_conversations.py`（默认 mock，`--real` 使用 Qwen）。
+
+2026-11-24 实际结果：
+
+```text
+mock: 8/8
+real: 8/8
+real avg model_calls=6.5, avg tokens=11413.1, avg elapsed=59.93s
+```
+
+证据：`outputs/conversation_eval.json`、`outputs/conversation_eval.md`、`outputs/conversation_eval_mock.json`。
+
+> 8 条是固定回归集，不是统计基准；单模型、单次运行不能证明“多 Agent 普遍优于单 Agent”。
+
 ---
 
 ## 5. 没有做/没有验证的
 
 | 项 | 状态 |
 |---|---|
-| 任务队列 / Worker 租约 / 心跳 / reaper | 未实现（v3.4） |
-| 运行中任务取消 | 未实现（v3.4） |
+| 任务队列 / Worker 租约 / 心跳 / reaper | 未实现（v3.5） |
+| 任务级强杀式取消 | 未实现（v3.5）；对话只有协作式取消 |
 | 任务级单写者（多 worker） | 未实现；当前只有工具幂等 |
-| 对话恢复/取消 | 未实现；`/conversations` 同步执行，未接 checkpoint |
-| 真实模型质量评测（多任务/rubric/回归） | 未做；只有 3 类 smoke |
+| 对话节点级恢复 | 未实现；当前恢复的是已保存的对话状态，不是 LangGraph 节点重放 |
+| 统计显著性多 Agent 评测 | 未做；只有固定 8 条回归集 |
 | Trace 节点耗时/`model_call_id`/任务级 Token 归因 | 未实现 |
 | 多租户/RBAC | 未实现；`user_id` 仍可伪造 |
 | Docker Compose / MCP / Gradio | 未在本环境验证 |
@@ -216,6 +265,9 @@ Copy-Item .env.example .env
 python scripts/test_llm.py
 python scripts/real_e2e_smoke.py
 python scripts/conversation_smoke.py
+python scripts/conversation_multiturn_smoke.py
+python scripts/eval_conversations.py
+python scripts/eval_conversations.py --real
 
 # 启动 API
 uvicorn app.main:app --reload
@@ -254,6 +306,9 @@ uvicorn app.main:app --reload
 - 审查报告：`docs/v3/01_技术审查报告.md`
 - P0/P1/P2：`docs/v3/03_问题清单_P0P1P2.md`
 - 本项目的使用说明：`README.md`
+
+
+
 
 
 

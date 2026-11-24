@@ -7,8 +7,14 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 
 from app.agents.conversation.agents import PROFILES, WorkerAgent
-from app.agents.conversation.models import AgentAction, ConversationState, SupervisorDecision
+from app.agents.conversation.models import (
+    AgentAction,
+    ConversationState,
+    SupervisorDecision,
+    add_message,
+)
 from app.agents.conversation.runtime import ConversationRuntime
+from app.agents.conversation.supervisor import LLMSupervisor
 from app.core.budget import ExecutionBudget
 from app.main import create_app
 from app.services.conversation_store import ConversationStore
@@ -100,6 +106,25 @@ def test_runtime_follows_supervisor_choice_not_fixed_order(components, settings)
     assert agents == ["research", "data", "writing"]
     assert [h["to"] for h in result.handoffs] == ["research", "data", "finish"]
     assert {o.get("tool") for o in result.observations} >= {"search_web", "analyze_csv"}
+
+
+class _RepeatSupervisorLLM:
+    def generate_structured_with_meta(self, *args, **kwargs):
+        return SimpleNamespace(
+            value=SupervisorDecision(next_agent="research", instruction="再查一次", reason="repeat"),
+            meta=SimpleNamespace(to_dict=lambda: {"model": "fake"}),
+        )
+
+
+def test_supervisor_repeat_guard_does_not_call_same_agent(settings):
+    state = make_state(settings, "调研 Agent 记忆机制并写一段总结", max_turns=4)
+    add_message(state, role="user", content=state.goal)
+    add_message(state, role="agent", agent="research", content="检索完成")
+
+    decision = LLMSupervisor(settings, _RepeatSupervisorLLM()).decide(state)
+
+    assert decision.next_agent != "research"
+    assert any("重复" in reason for reason in state.degraded_reasons)
 
 
 class _FakeCall:

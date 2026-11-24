@@ -72,6 +72,7 @@ class ConversationState:
     budget: dict[str, Any] = field(default_factory=dict)
     final_answer: str | None = None
     stop_reason: str | None = None
+    cancel_requested: bool = False
     degraded_reasons: list[str] = field(default_factory=list)
     created_at: str = field(default_factory=utc_now)
     updated_at: str = field(default_factory=utc_now)
@@ -112,6 +113,7 @@ class ConversationState:
             "budget": dict(self.budget),
             "final_answer": self.final_answer,
             "stop_reason": self.stop_reason,
+            "cancel_requested": self.cancel_requested,
             "degraded_reasons": list(self.degraded_reasons),
             "created_at": self.created_at,
             "updated_at": self.updated_at,
@@ -134,6 +136,7 @@ class ConversationState:
             budget=dict(data.get("budget") or {}),
             final_answer=data.get("final_answer"),
             stop_reason=data.get("stop_reason"),
+            cancel_requested=bool(data.get("cancel_requested", False)),
             degraded_reasons=list(data.get("degraded_reasons") or []),
             created_at=data.get("created_at", utc_now()),
             updated_at=data.get("updated_at", utc_now()),

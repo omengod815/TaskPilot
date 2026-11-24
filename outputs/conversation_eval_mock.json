@@ -1,0 +1,202 @@
+{
+  "generated_at": "2026-11-24T11:39:43+00:00",
+  "summary": {
+    "suite_version": "1.0",
+    "mode": "mock",
+    "total": 8,
+    "passed": 8,
+    "pass_rate": 1.0,
+    "completed_rate": 1.0,
+    "agent_hit_rate": 1.0,
+    "tool_hit_rate": 1.0,
+    "answer_hit_rate": 1.0,
+    "avg_model_calls": 0.0,
+    "avg_tokens": 0.0,
+    "avg_elapsed_seconds": 0.08,
+    "wall_seconds": 0.7
+  },
+  "results": [
+    {
+      "id": "csv_metrics",
+      "status": "completed",
+      "http_status": 200,
+      "initial_status": "completed",
+      "agents": [
+        "data",
+        "writing"
+      ],
+      "tools": [
+        "analyze_csv"
+      ],
+      "model_calls": 0,
+      "tokens": 0,
+      "elapsed_seconds": 0.09,
+      "agent_hit": true,
+      "tool_hit": true,
+      "answer_hit": true,
+      "call_hit": true,
+      "completed": true,
+      "pass": true,
+      "final_answer": "## 综合结论\n\n数据分析：共 8 行；MAE=1.35、RMSE=1.4089、R2=0.984876。\n\n局限：证据来自受控工具观察；样本量/来源时效性未进一步核验。"
+    },
+    {
+      "id": "research_summary",
+      "status": "completed",
+      "http_status": 200,
+      "initial_status": "completed",
+      "agents": [
+        "research",
+        "writing"
+      ],
+      "tools": [
+        "search_web"
+      ],
+      "model_calls": 0,
+      "tokens": 0,
+      "elapsed_seconds": 0.09,
+      "agent_hit": true,
+      "tool_hit": true,
+      "answer_hit": true,
+      "call_hit": true,
+      "completed": true,
+      "pass": true,
+      "final_answer": "## 综合结论\n\n资料要点：# Agent 工程基础（演示知识库） | ## 任务规划与工具调用\nAgent 应把用户目标转成可检查的步骤，而不是把所有工作都交给一次长 Prompt。工具应有明确名称、输入 Schema、权限边界、超时和错误处理。模型可以建议调用工具，但应用代码负责验证参数并执行。。\n\n局限：证据来自受控工具观察；样本量/来源时效性未进一步核验。"
+    },
+    {
+      "id": "safe_calc",
+      "status": "completed",
+      "http_status": 200,
+      "initial_status": "completed",
+      "agents": [
+        "general",
+        "writing"
+      ],
+      "tools": [
+        "safe_calculate"
+      ],
+      "model_calls": 0,
+      "tokens": 0,
+      "elapsed_seconds": 0.06,
+      "agent_hit": true,
+      "tool_hit": true,
+      "answer_hit": true,
+      "call_hit": true,
+      "completed": true,
+      "pass": true,
+      "final_answer": "## 综合结论\n\n计算结果：(2+3)*4 = 20.0。\n\n局限：证据来自受控工具观察；样本量/来源时效性未进一步核验。"
+    },
+    {
+      "id": "writing_only",
+      "status": "completed",
+      "http_status": 200,
+      "initial_status": "completed",
+      "agents": [
+        "writing"
+      ],
+      "tools": [],
+      "model_calls": 0,
+      "tokens": 0,
+      "elapsed_seconds": 0.05,
+      "agent_hit": true,
+      "tool_hit": true,
+      "answer_hit": true,
+      "call_hit": true,
+      "completed": true,
+      "pass": true,
+      "final_answer": "## 综合结论\n\n本次对话没有产生工具证据；以下结论仅基于对话内容，不能当作事实核验结果。\n\n局限：证据来自受控工具观察；样本量/来源时效性未进一步核验。"
+    },
+    {
+      "id": "data_limitations",
+      "status": "completed",
+      "http_status": 200,
+      "initial_status": "completed",
+      "agents": [
+        "data",
+        "writing"
+      ],
+      "tools": [
+        "analyze_csv"
+      ],
+      "model_calls": 0,
+      "tokens": 0,
+      "elapsed_seconds": 0.06,
+      "agent_hit": true,
+      "tool_hit": true,
+      "answer_hit": true,
+      "call_hit": true,
+      "completed": true,
+      "pass": true,
+      "final_answer": "## 综合结论\n\n数据分析：共 8 行；MAE=1.35、RMSE=1.4089、R2=0.984876。\n\n局限：证据来自受控工具观察；样本量/来源时效性未进一步核验。"
+    },
+    {
+      "id": "mixed_research_data",
+      "status": "completed",
+      "http_status": 200,
+      "initial_status": "completed",
+      "agents": [
+        "data",
+        "research",
+        "writing"
+      ],
+      "tools": [
+        "analyze_csv",
+        "search_web"
+      ],
+      "model_calls": 0,
+      "tokens": 0,
+      "elapsed_seconds": 0.1,
+      "agent_hit": true,
+      "tool_hit": true,
+      "answer_hit": true,
+      "call_hit": true,
+      "completed": true,
+      "pass": true,
+      "final_answer": "## 综合结论\n\n数据分析：共 8 行；MAE=1.35、RMSE=1.4089、R2=0.984876。\n\n资料要点：# Agent 工程基础（演示知识库） | ## 任务规划与工具调用\nAgent 应把用户目标转成可检查的步骤，而不是把所有工作都交给一次长 Prompt。工具应有明确名称、输入 Schema、权限边界、超时和错误处理。模型可以建议调用工具，但应用代码负责验证参数并执行。。\n\n局限：证据来自受控工具观察；样本量/来源时效性未进一步核验。"
+    },
+    {
+      "id": "general_explain",
+      "status": "completed",
+      "http_status": 200,
+      "initial_status": "completed",
+      "agents": [
+        "general",
+        "writing"
+      ],
+      "tools": [],
+      "model_calls": 0,
+      "tokens": 0,
+      "elapsed_seconds": 0.05,
+      "agent_hit": true,
+      "tool_hit": true,
+      "answer_hit": true,
+      "call_hit": true,
+      "completed": true,
+      "pass": true,
+      "final_answer": "## 综合结论\n\n本次对话没有产生工具证据；以下结论仅基于对话内容，不能当作事实核验结果。\n\n局限：证据来自受控工具观察；样本量/来源时效性未进一步核验。"
+    },
+    {
+      "id": "csv_follow_up",
+      "status": "completed",
+      "http_status": 200,
+      "initial_status": "completed",
+      "agents": [
+        "data",
+        "writing",
+        "writing"
+      ],
+      "tools": [
+        "analyze_csv"
+      ],
+      "model_calls": 0,
+      "tokens": 0,
+      "elapsed_seconds": 0.13,
+      "agent_hit": true,
+      "tool_hit": true,
+      "answer_hit": true,
+      "call_hit": true,
+      "completed": true,
+      "pass": true,
+      "final_answer": "## 综合结论\n\n数据分析：共 8 行；MAE=1.35、RMSE=1.4089、R2=0.984876。\n\n局限：证据来自受控工具观察；样本量/来源时效性未进一步核验。"
+    }
+  ]
+}

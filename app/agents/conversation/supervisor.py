@@ -56,6 +56,18 @@ class MockSupervisor:
             )
 
         wants_writing = any(word in lower for word in _WRITING_WORDS)
+        if "data" not in done and any(word in lower for word in _DATA_WORDS):
+            return SupervisorDecision(
+                next_agent="data",
+                instruction="补充 CSV/数值证据；只报告工具返回的真实指标。",
+                reason="mock: data evidence still missing",
+            )
+        if "research" not in done and any(word in lower for word in _RESEARCH_WORDS):
+            return SupervisorDecision(
+                next_agent="research",
+                instruction="补充检索证据；保留来源，不要编造。",
+                reason="mock: research evidence still missing",
+            )
         if wants_writing and "writing" not in done and ("research" in done or "data" in done):
             return SupervisorDecision(
                 next_agent="writing",
@@ -107,6 +119,19 @@ class LLMSupervisor:
         if decision.next_agent == "finish" and not done:
             # Never end an empty conversation: force one worker turn.
             return self.fallback.decide(state)
+        if decision.next_agent != "finish" and decision.next_agent in done:
+            # A repeated worker adds calls without new evidence.  Fall back to
+            # the deterministic policy and never loop on the same agent.
+            fallback = self.fallback.decide(state)
+            if fallback.next_agent != "finish" and fallback.next_agent in done:
+                fallback = SupervisorDecision(
+                    next_agent="finish",
+                    reason="supervisor repeat guard: avoid calling the same agent again",
+                )
+            state.degraded_reasons.append(
+                f"Supervisor 重复选择 {decision.next_agent}，已降级为 {fallback.next_agent}"
+            )
+            return fallback
         return decision
 
     def _decide_llm(self, state: ConversationState, budget: ExecutionBudget) -> SupervisorDecision:
@@ -118,7 +143,7 @@ class LLMSupervisor:
             "规则：\n"
             "1. 需要外部资料时选 research；需要 CSV/指标时选 data；需要成稿时选 writing。\n"
             "2. 不要在没有证据时 finish；如果是简单通用问题，可以直接选 general。\n"
-            "3. 同一个 Agent 不要连续调用超过 2 次；重复没有新信息。\n"
+            "3. 已经在本轮发过言的 Agent 不要重复选择；重复没有新信息。\n"
             "4. 只输出严格 JSON，字段符合 SupervisorDecision Schema。\n"
             "SupervisorDecision JSON Schema:\n"
             + json.dumps(SupervisorDecision.model_json_schema(), ensure_ascii=False)
